@@ -93,12 +93,13 @@ interface KanbanBoardProps {
     onDeleteOpportunity?: (id: string) => void;
     onWinCase?: (id: string) => void;
     onLoseCase?: (id: string) => void;
+    onReopenCase?: (id: string) => void;
     onRefresh?: () => void;
     onOpportunityPatch?: (opportunityId: string, patch: Partial<Opportunity>) => void;
     onReorder?: (updatedOpportunities: Opportunity[]) => void;
 }
 
-export function KanbanBoard({ initialOpportunities, onStageChange, onEditOpportunity, onDeleteOpportunity, onWinCase, onLoseCase, onRefresh, onOpportunityPatch, onReorder }: KanbanBoardProps) {
+export function KanbanBoard({ initialOpportunities, onStageChange, onEditOpportunity, onDeleteOpportunity, onWinCase, onLoseCase, onReopenCase, onRefresh, onOpportunityPatch, onReorder }: KanbanBoardProps) {
     // Sync state with props
     const [opportunities, setOpportunities] = useState<Opportunity[]>(initialOpportunities);
 
@@ -269,6 +270,7 @@ export function KanbanBoard({ initialOpportunities, onStageChange, onEditOpportu
                             onDelete={onDeleteOpportunity}
                             onWinCase={onWinCase}
                             onLoseCase={onLoseCase}
+                            onReopenCase={onReopenCase}
                             onRefresh={onRefresh}
                             onOpportunityPatch={onOpportunityPatch}
                         />

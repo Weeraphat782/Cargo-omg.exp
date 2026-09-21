@@ -26,6 +26,7 @@ import {
   Trash,
   CheckCircle,
   XCircle,
+  RotateCcw,
   FileText,
   ExternalLink,
   Loader2,
@@ -44,6 +45,7 @@ interface ListViewProps {
   onDelete?: (id: string) => void;
   onWinCase?: (id: string) => void;
   onLoseCase?: (id: string) => void;
+  onReopenCase?: (id: string) => void;
   onRefresh?: () => void;
   onOpportunityPatch?: (opportunityId: string, patch: Partial<Opportunity>) => void;
 }
@@ -255,7 +257,7 @@ function QuoteChips({ opp }: { opp: Opportunity }) {
   );
 }
 
-export function ListView({ opportunities, onEdit, onDelete, onWinCase, onLoseCase, onOpportunityPatch }: ListViewProps) {
+export function ListView({ opportunities, onEdit, onDelete, onWinCase, onLoseCase, onReopenCase, onOpportunityPatch }: ListViewProps) {
   const router = useRouter();
   const pager = usePagination(
     'opportunities',
@@ -445,6 +447,19 @@ export function ListView({ opportunities, onEdit, onDelete, onWinCase, onLoseCas
                             </DropdownMenuItem>
                           </>
                         )}
+                        {opp.closureStatus && (
+                          <DropdownMenuItem
+                            className="cursor-pointer text-blue-600 focus:text-blue-600"
+                            onClick={() => {
+                              if (confirm('Reopen this opportunity?')) {
+                                onReopenCase?.(opp.id);
+                              }
+                            }}
+                          >
+                            <RotateCcw className="mr-2 h-4 w-4" />
+                            Reopen
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           className="cursor-pointer"
                           onClick={() => onEdit?.(opp)}
@@ -584,6 +599,18 @@ export function ListView({ opportunities, onEdit, onDelete, onWinCase, onLoseCas
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      {opp.closureStatus && (
+                        <DropdownMenuItem
+                          className="text-blue-600 focus:text-blue-600"
+                          onClick={() => {
+                            if (confirm('Reopen this opportunity?')) {
+                              onReopenCase?.(opp.id);
+                            }
+                          }}
+                        >
+                          <RotateCcw className="mr-2 h-4 w-4" /> Reopen
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onClick={() => onEdit?.(opp)}>
                         <Edit className="mr-2 h-4 w-4" /> Edit
                       </DropdownMenuItem>

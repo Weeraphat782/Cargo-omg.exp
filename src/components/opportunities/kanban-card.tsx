@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GripVertical, ExternalLink, Loader2, MoreHorizontal, Edit, Trash, Plus, CheckCircle, XCircle, FileText, Palette, UserCircle2, Leaf, FileCheck, BadgeCheck, Banknote, Plane, Mail, Link, Thermometer } from 'lucide-react';
+import { GripVertical, ExternalLink, Loader2, MoreHorizontal, Edit, Trash, Plus, CheckCircle, XCircle, RotateCcw, FileText, Palette, UserCircle2, Leaf, FileCheck, BadgeCheck, Banknote, Plane, Mail, Link, Thermometer } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -30,6 +30,7 @@ interface KanbanCardProps {
   onDelete?: (id: string) => void;
   onWinCase?: (id: string) => void;
   onLoseCase?: (id: string) => void;
+  onReopenCase?: (id: string) => void;
   onRefresh?: () => void;
   /** Patch parent/board state after inline saves — avoids full refetch */
   onOpportunityPatch?: (opportunityId: string, patch: Partial<Opportunity>) => void;
@@ -45,7 +46,7 @@ const FOCUS_COLORS = [
   { label: 'Orange', value: '#f97316', class: 'bg-orange-500' },
 ];
 
-export function KanbanCard({ opportunity, onEdit, onDelete, onWinCase, onLoseCase, onRefresh, onOpportunityPatch }: KanbanCardProps) {
+export function KanbanCard({ opportunity, onEdit, onDelete, onWinCase, onLoseCase, onReopenCase, onRefresh, onOpportunityPatch }: KanbanCardProps) {
   // console.log(`Card ${opportunity.id}: onEdit is`, !!onEdit);
   const router = useRouter();
   const [creating] = useState(false);
@@ -363,32 +364,50 @@ export function KanbanCard({ opportunity, onEdit, onDelete, onWinCase, onLoseCas
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  className="cursor-pointer text-green-600 focus:text-green-600"
-                  onSelect={() => {
-                    if (confirm('Mark this opportunity as WON?')) {
-                      if (onWinCase) onWinCase(opportunity.id);
-                    }
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Win Case
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer text-red-600 focus:text-red-600"
-                  onSelect={() => {
-                    if (confirm('Mark this opportunity as LOST?')) {
-                      if (onLoseCase) onLoseCase(opportunity.id);
-                    }
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <XCircle className="mr-2 h-4 w-4" />
-                  Lose Case
-                </DropdownMenuItem>
+                {opportunity.closureStatus ? (
+                  <DropdownMenuItem
+                    className="cursor-pointer text-blue-600 focus:text-blue-600"
+                    onSelect={() => {
+                      if (confirm('Reopen this opportunity?')) {
+                        onReopenCase?.(opportunity.id);
+                      }
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Reopen
+                  </DropdownMenuItem>
+                ) : (
+                  <>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-green-600 focus:text-green-600"
+                      onSelect={() => {
+                        if (confirm('Mark this opportunity as WON?')) {
+                          if (onWinCase) onWinCase(opportunity.id);
+                        }
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Win Case
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-red-600 focus:text-red-600"
+                      onSelect={() => {
+                        if (confirm('Mark this opportunity as LOST?')) {
+                          if (onLoseCase) onLoseCase(opportunity.id);
+                        }
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Lose Case
+                    </DropdownMenuItem>
+                  </>
+                )}
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onSelect={() => {

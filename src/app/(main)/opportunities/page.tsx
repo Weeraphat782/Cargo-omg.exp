@@ -698,6 +698,24 @@ export default function OpportunitiesPage() {
     }
   };
 
+  const handleReopenCase = async (opportunityId: string) => {
+    setOpportunities(prev => prev.map(opp =>
+      opp.id === opportunityId ? { ...opp, closureStatus: null } : opp
+    ));
+
+    const { error } = await supabase
+      .from('opportunities')
+      .update({ closure_status: null })
+      .eq('id', opportunityId);
+
+    if (error) {
+      toast.error('Failed to reopen');
+      fetchOpportunities();
+    } else {
+      toast.success('Opportunity reopened');
+    }
+  };
+
   const getProbabilityForStage = (stage: OpportunityStage): number => {
     switch (stage) {
       case 'inquiry': return 10;
@@ -917,6 +935,7 @@ export default function OpportunitiesPage() {
                   onDeleteOpportunity={handleDeleteOpportunity}
                   onWinCase={handleWinCase}
                   onLoseCase={handleLoseCase}
+                  onReopenCase={handleReopenCase}
                   onRefresh={fetchOpportunities}
                   onOpportunityPatch={handleOpportunityPatch}
                   onReorder={handleReorder}
@@ -931,6 +950,7 @@ export default function OpportunitiesPage() {
                   onDelete={handleDeleteOpportunity}
                   onWinCase={handleWinCase}
                   onLoseCase={handleLoseCase}
+                  onReopenCase={handleReopenCase}
                   onRefresh={fetchOpportunities}
                   onOpportunityPatch={handleOpportunityPatch}
                 />
