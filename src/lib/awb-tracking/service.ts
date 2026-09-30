@@ -16,7 +16,7 @@ import {
 } from './core';
 
 const QUOTATION_TRACKING_SELECT =
-  'id, quotation_no, awb_number, opportunity_id, carrier_code, carrier_code_manual, tracking_status, delivered_at, delivered_local_offset, delivery_notify_emails, customer_user_id, destination, requested_destination, customer_name, company_name, chargeable_weight, is_chargeable_weight_manual, manual_chargeable_weight, pallets, booking_air_freight, created_at';
+  'id, quotation_no, awb_number, opportunity_id, carrier_code, carrier_code_manual, tracking_status, delivered_at, delivered_local_offset, delivery_notify_emails, customer_user_id, destination, requested_destination, customer_name, company_name, chargeable_weight, is_chargeable_weight_manual, manual_chargeable_weight, pallets, booking_air_freight, awb_origin, awb_destination, created_at';
 
 function mapQuotationRow(data: Record<string, unknown>): QuotationRow {
   return {
@@ -41,6 +41,8 @@ function mapQuotationRow(data: Record<string, unknown>): QuotationRow {
       data.manual_chargeable_weight != null ? Number(data.manual_chargeable_weight) : null,
     pallets: data.pallets,
     booking_air_freight: (data.booking_air_freight as BookingAirFreightJson) ?? null,
+    awb_origin: (data.awb_origin as string) ?? null,
+    awb_destination: (data.awb_destination as string) ?? null,
   };
 }
 
@@ -104,6 +106,8 @@ function buildDeps(): TrackingDeps {
           ...(patch.delivered_local_offset !== undefined
             ? { delivered_local_offset: patch.delivered_local_offset }
             : {}),
+          ...(patch.awb_origin !== undefined ? { awb_origin: patch.awb_origin } : {}),
+          ...(patch.awb_destination !== undefined ? { awb_destination: patch.awb_destination } : {}),
           updated_at: new Date().toISOString(),
         })
         .eq('id', quotationId);
@@ -498,6 +502,8 @@ export async function updateAwbNumber(input: { omg_number: string; awb_number: s
       tracking_checked_at: null,
       delivered_at: null,
       delivered_local_offset: null,
+      awb_origin: null,
+      awb_destination: null,
       carrier_code: carrier,
       updated_at: new Date().toISOString(),
     })

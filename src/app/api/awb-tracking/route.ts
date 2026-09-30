@@ -154,6 +154,8 @@ export async function POST(request: NextRequest) {
           flight_no: body.flight_no,
           flight_date: body.flight_date,
           chargeable_weight_kg: body.chargeable_weight_kg,
+          origin: body.origin,
+          destination: body.destination,
           created_by: 'staff',
         });
         return NextResponse.json(result);

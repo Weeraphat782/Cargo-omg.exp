@@ -79,6 +79,12 @@ export function carrierFromAwb(normalized: string): string | null {
   return AWB_PREFIX_CARRIER[normalized.slice(0, 3)] ?? null;
 }
 
+export function normalizeIata(code?: string): string | undefined {
+  const t = code?.trim().toUpperCase();
+  if (!t || !/^[A-Z]{3}$/.test(t)) return undefined;
+  return t;
+}
+
 export const NO_DELIVERED_RECIPIENTS_MSG =
   'No recipients (no delivery_notify_emails, requester or company email)';
 
@@ -154,6 +160,8 @@ export type QuotationRow = {
   manual_chargeable_weight?: number | null;
   pallets: unknown;
   booking_air_freight: BookingAirFreightJson | null;
+  awb_origin?: string | null;
+  awb_destination?: string | null;
 };
 
 export type ApplyTrackingInput = {
@@ -168,6 +176,9 @@ export type ApplyTrackingInput = {
   flight_no?: string;
   flight_date?: string;
   chargeable_weight_kg?: number;
+  /** IATA airport codes from airline tracking; overwrite stored route when provided */
+  origin?: string;
+  destination?: string;
 };
 
 export type ApplyTrackingResult = {
@@ -198,6 +209,8 @@ export type TrackingDeps = {
       tracking_checked_at: string;
       carrier_code?: string | null;
       delivered_local_offset?: string | null;
+      awb_origin?: string | null;
+      awb_destination?: string | null;
     }
   ) => Promise<void>;
   mergeTrackingHints: (
@@ -324,13 +337,19 @@ export async function applyTrackingUpdate(
 
   const deliveredAtIso = input.delivered_at || checkedAt;
   const localOffset = input.delivered_at ? extractOffset(input.delivered_at) : null;
+  const storedStatus: TrackingStatus =
+    hadDeliveredAt && input.status !== 'delivered' ? 'delivered' : input.status;
 
   await deps.updateStatus(quotation.id, {
-    tracking_status: input.status,
+    tracking_status: storedStatus,
     tracking_status_raw: input.raw_text,
     tracking_checked_at: checkedAt,
     carrier_code: carrier,
-    ...(input.status === 'delivered' ? { delivered_local_offset: localOffset } : {}),
+    ...(input.delivered_at ? { delivered_local_offset: localOffset } : {}),
+    ...(input.origin !== undefined ? { awb_origin: normalizeIata(input.origin) ?? null } : {}),
+    ...(input.destination !== undefined
+      ? { awb_destination: normalizeIata(input.destination) ?? null }
+      : {}),
   });
 
   let email: ApplyTrackingResult['email'] = 'skipped';
@@ -357,7 +376,7 @@ export async function applyTrackingUpdate(
       return {
         quotation_id: quotation.id,
         omg_number: quotation.quotation_no,
-        tracking_status: input.status,
+        tracking_status: storedStatus,
         already_delivered: false,
         email,
         stage_updated: stageUpdated,
@@ -398,7 +417,7 @@ export async function applyTrackingUpdate(
   return {
     quotation_id: quotation.id,
     omg_number: quotation.quotation_no,
-    tracking_status: input.status,
+    tracking_status: storedStatus,
     already_delivered: hadDeliveredAt && !firstTimeDelivered,
     email: hadDeliveredAt && input.status === 'delivered' ? 'skipped' : email,
     stage_updated: stageUpdated,

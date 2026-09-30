@@ -40,7 +40,7 @@ Run migration: `Tr/migrations/012_add_booking_email_drafted.sql`
 | `build_booking_email_draft` | Subject + body + to/cc (OMG format); auto net from docs |
 | `mark_booking_email_drafted` | Idempotent drafted flag |
 
-Run migration: `Tr/migrations/023_awb_tracking_delivered.sql`
+Run migrations: `Tr/migrations/023_awb_tracking_delivered.sql`, then `Tr/migrations/024_awb_route.sql`
 
 ## Delivery tracking tools (Grok daily AWB check)
 
@@ -49,7 +49,7 @@ The app does **not** scrape airline sites. Grok checks carrier tracking pages an
 | Tool | Purpose |
 |------|---------|
 | `list_awbs_to_track` | AWBs on Op at `picked_up`+, not yet `delivered_at`. Optional `days` (default **30**, pickup_date or created_at). `carrier_code` from AWB prefix when not stored. |
-| `update_awb_tracking` | Append history + status; `delivered` sets date, advances Op, email **once** unless `send_email: false`. Optional `flight_no`, `flight_date`, `chargeable_weight_kg` for customer email. |
+| `update_awb_tracking` | Append history + status; `delivered` sets date, advances Op, email **once** unless `send_email: false`. Optional `origin`/`destination` (IATA) for email Route, `flight_no`, `flight_date`, `chargeable_weight_kg`. |
 | `get_awb_tracking` | Current status, history, notification log (by AWB or OMG number) |
 | `resend_delivered_email` | Resend delivered notification (already delivered); pass `awb_number` or `omg_number`; new manual log row with real To list |
 | `update_awb_number` | Fix AWB on a quote (`omg_number` + `awb_number`); resets tracking, clears `delivered_at` when changed, logs old AWB in history |
@@ -64,7 +64,7 @@ The app does **not** scrape airline sites. Grok checks carrier tracking pages an
 
 1. `list_awbs_to_track({ days: 30 })` — use `days: 3650` to include old backlog; clear with `send_email: false`
 2. For each row, open the airline tracking page (use `carrier_code` from the list)
-3. If Delivered → `update_awb_tracking({ awb_number, status: "delivered", raw_text, source_url, delivered_at, flight_no?, flight_date?, chargeable_weight_kg? })`
+3. If Delivered → `update_awb_tracking({ awb_number, status: "delivered", raw_text, source_url, delivered_at, origin?, destination?, flight_no?, flight_date?, chargeable_weight_kg? })`
 4. Otherwise → `update_awb_tracking` with the current status (no `delivered_at` required)
 
 **Idempotency:** Calling `update_awb_tracking` again with `delivered` returns `{ already_delivered: true, email: "skipped" }` — no duplicate email.
@@ -77,7 +77,22 @@ Example:
   "status": "delivered",
   "raw_text": "Shipment delivered to consignee",
   "source_url": "https://www.example-airline.com/track/21710648864",
-  "delivered_at": "2026-09-30T14:20:00+02:00"
+  "delivered_at": "2026-09-30T14:20:00+02:00",
+  "origin": "BKK",
+  "destination": "ZRH"
+}
+```
+
+**Correct route after delivered (no auto email):** call `update_awb_tracking` again with `status: "delivered"`, new `origin`/`destination`, and omit `delivered_at`; then `resend_delivered_email` if customers need the updated email.
+
+```json
+{
+  "awb_number": "217-1064 8864",
+  "status": "delivered",
+  "raw_text": "Route corrected from airline tracking",
+  "source_url": "https://www.example-airline.com/track/21710648864",
+  "origin": "BKK",
+  "destination": "ZRH"
 }
 ```
 

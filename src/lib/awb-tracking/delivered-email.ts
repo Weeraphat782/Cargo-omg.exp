@@ -102,7 +102,9 @@ export function buildDeliveredEmailContent(opts: {
   const omg = q.quotation_no || '';
   const norm = q.awb_number ? normalizeAwb(q.awb_number) : null;
   const awb = norm ? formatAwbDisplay(norm) : q.awb_number || '';
-  const dest = (q.destination || q.requested_destination || '').trim();
+  const routeOrigin = (q.awb_origin || 'BKK').trim();
+  const routeDest =
+    (q.awb_destination || '').trim() || (q.destination || q.requested_destination || '').trim();
   const flight = formatFlightLine(q);
   const pallets = palletCount(q.pallets);
   const chgKg = effectiveChargeableKg(q);
@@ -117,7 +119,7 @@ export function buildDeliveredEmailContent(opts: {
   const rows: [string, string][] = [];
   if (omg) rows.push(['OMG number', omg]);
   if (awb) rows.push(['AWB', awb]);
-  if (dest) rows.push(['Route', `BKK → ${dest}`]);
+  if (routeDest) rows.push(['Route', `${routeOrigin} → ${routeDest}`]);
   if (flight) rows.push(['Flight', flight]);
   if (pallets > 0) rows.push(['Pallets', String(pallets)]);
   if (chgKg != null) rows.push(['Chargeable weight', `${chgKg} kg`]);

@@ -489,6 +489,8 @@ export function registerBookingTools(server: McpServer): void {
     flight_no?: string;
     flight_date?: string;
     chargeable_weight_kg?: number;
+    origin?: string;
+    destination?: string;
   }>({
     type: 'object',
     properties: {
@@ -507,6 +509,14 @@ export function registerBookingTools(server: McpServer): void {
       flight_no: { type: 'string', description: 'From airline tracking page (merged if not already set)' },
       flight_date: { type: 'string', description: 'Flight date YYYY-MM-DD from airline page' },
       chargeable_weight_kg: { type: 'number', description: 'Chargeable kg from airline if not on quotation' },
+      origin: {
+        type: 'string',
+        description: 'Route origin IATA from AWB/airline (e.g. BKK). Overwrites stored value; use to correct route without resending email.',
+      },
+      destination: {
+        type: 'string',
+        description: 'Route destination IATA from AWB/airline (e.g. ZRH). Overwrites stored value.',
+      },
     },
     required: ['awb_number', 'status', 'raw_text', 'source_url'],
     additionalProperties: false,
@@ -536,6 +546,16 @@ export function registerBookingTools(server: McpServer): void {
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'flight_date must be YYYY-MM-DD')
       .optional(),
     chargeable_weight_kg: z.number().positive().optional(),
+    origin: z
+      .string()
+      .regex(/^[A-Za-z]{3}$/, 'origin must be a 3-letter IATA code')
+      .transform((s) => s.toUpperCase())
+      .optional(),
+    destination: z
+      .string()
+      .regex(/^[A-Za-z]{3}$/, 'destination must be a 3-letter IATA code')
+      .transform((s) => s.toUpperCase())
+      .optional(),
   });
 
   server.registerTool(

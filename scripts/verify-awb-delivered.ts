@@ -85,6 +85,25 @@ const withFlight = buildDeliveredEmailContent({
 });
 assert.match(withFlight.text, /TG123/);
 
+const awbRoute = buildDeliveredEmailContent({
+  quotation: makeQuotation({
+    awb_origin: 'BKK',
+    awb_destination: 'ZRH',
+    destination: 'Switzerland',
+  }),
+  source_url: '',
+  delivered_at: '2026-09-30T14:20:00+02:00',
+});
+assert.match(awbRoute.text, /BKK → ZRH/);
+assert.ok(!awbRoute.text.includes('Switzerland'));
+
+const quoteRouteFallback = buildDeliveredEmailContent({
+  quotation: makeQuotation({ destination: 'Switzerland', awb_origin: null, awb_destination: null }),
+  source_url: '',
+  delivered_at: '2026-09-30T14:20:00+02:00',
+});
+assert.match(quoteRouteFallback.text, /BKK → Switzerland/);
+
 async function runIdempotencyCheck() {
   let deliveredAt: string | null = null;
   let stage = 'picked_up';
@@ -262,6 +281,50 @@ async function runResendManualLogRecipients() {
   assert.ok(logged.includes('notify@example.com'));
 }
 
+async function runRouteCorrectionOnDelivered() {
+  let capturedOrigin: string | null | undefined;
+  let capturedDest: string | null | undefined;
+  let patchHadOffset = false;
+  const q = makeQuotation({
+    delivered_at: '2026-01-01T12:00:00Z',
+    tracking_status: 'delivered',
+    delivered_local_offset: '+02:00',
+  });
+  const deps: TrackingDeps = {
+    findQuotationByAwb: async () => q,
+    insertHistory: async () => {},
+    updateStatus: async (_id, patch) => {
+      capturedOrigin = patch.awb_origin;
+      capturedDest = patch.awb_destination;
+      patchHadOffset = patch.delivered_local_offset !== undefined;
+    },
+    mergeTrackingHints: async () => {},
+    claimDelivered: async () => false,
+    getOpStage: async () => 'delivered',
+    listQuotationsForOp: async () => [{ id: 'q1', awb_number: q.awb_number, delivered_at: q.delivered_at }],
+    setOpStage: async () => {},
+    resolveRequesterEmail: async () => 'user@example.com',
+    tryClaimAutoEmail: async () => 'already',
+    sendDelivered: async () => ({ ok: true }),
+    finalizeAutoLog: async () => {},
+    insertManualLog: async () => 'log1',
+    updateManualLog: async () => {},
+  };
+  const r = await applyTrackingUpdate(deps, {
+    awb_number: '21710648864',
+    status: 'delivered',
+    raw_text: 'Route fix',
+    source_url: 'https://example.com',
+    origin: 'BKK',
+    destination: 'ZRH',
+  });
+  assert.equal(r.email, 'skipped');
+  assert.equal(r.already_delivered, true);
+  assert.equal(capturedOrigin, 'BKK');
+  assert.equal(capturedDest, 'ZRH');
+  assert.equal(patchHadOffset, false);
+}
+
 async function runResendEmptyThrows() {
   const q = makeQuotation({ delivery_notify_emails: [], customer_user_id: null, delivered_at: '2026-01-01T00:00:00Z' });
   const deps: TrackingDeps = {
@@ -294,6 +357,7 @@ Promise.all([
   runEmptyRecipientsAuto(),
   runResendManualLogRecipients(),
   runResendEmptyThrows(),
+  runRouteCorrectionOnDelivered(),
 ])
   .then(() => {
     console.log('verify-awb-delivered: ok');
