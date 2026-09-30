@@ -17,6 +17,8 @@ import {
   formatDeliveredTimes,
 } from '../src/lib/awb-tracking/delivered-email';
 
+process.env.NEXT_PUBLIC_SITE_URL = 'https://cargo.omgexp.com';
+
 assert.equal(normalizeAwb('217-1064 8864'), '21710648864');
 assert.equal(normalizeAwb('21710648864'), '21710648864');
 assert.equal(normalizeAwb('123'), null);
@@ -69,6 +71,16 @@ function makeQuotation(overrides: Partial<QuotationRow> = {}): QuotationRow {
 }
 
 assert.equal(effectiveChargeableKg(makeQuotation({ chargeable_weight: 50, is_chargeable_weight_manual: true, manual_chargeable_weight: 200 })), 200);
+
+const logoEmail = buildDeliveredEmailContent({
+  quotation: makeQuotation(),
+  source_url: '',
+  delivered_at: '2026-09-30T14:20:00+02:00',
+});
+assert.match(logoEmail.html, /<img src="https:\/\/cargo\.omgexp\.com\/email-logo\.png"/);
+assert.match(logoEmail.html, /width="160"/);
+assert.ok(!logoEmail.html.includes('<h1 style="margin:0;font-size:18px;font-weight:600;">OMG Cargo</h1>'));
+assert.ok(logoEmail.text.trimEnd().endsWith('— OMG Cargo'));
 
 const noFlight = buildDeliveredEmailContent({
   quotation: makeQuotation({ booking_air_freight: null }),
