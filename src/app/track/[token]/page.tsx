@@ -34,11 +34,13 @@ function formatAmount(amount: number) {
     return `฿${amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
-function getStageDisplay(stage?: string, status?: string) {
+function getStageDisplay(stage?: string, status?: string, deliveredAt?: string | null) {
+    if (deliveredAt || stage === 'delivered') return { label: 'Delivered', color: 'text-emerald-700', bgColor: 'bg-emerald-50 border-emerald-200', step: 6 };
     if (status === 'completed') return { label: 'Delivered', color: 'text-emerald-700', bgColor: 'bg-emerald-50 border-emerald-200', step: 6 };
     if (status === 'Shipped') return { label: 'Shipped', color: 'text-blue-700', bgColor: 'bg-blue-50 border-blue-200', step: 4 };
     switch (stage) {
-        case 'payment_received': return { label: 'Delivered', color: 'text-emerald-700', bgColor: 'bg-emerald-50 border-emerald-200', step: 6 };
+        case 'payment_received': return { label: 'Payment received', color: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200', step: 6 };
+        case 'picked_up': return { label: 'Picked up', color: 'text-teal-700', bgColor: 'bg-teal-50 border-teal-200', step: 5 };
         case 'waiting_for_pickup': return { label: 'Waiting for Pick Up', color: 'text-teal-700', bgColor: 'bg-teal-50 border-teal-200', step: 5 };
         case 'awb_received': return { label: 'AWB Received', color: 'text-blue-700', bgColor: 'bg-blue-50 border-blue-200', step: 4 };
         case 'booking_requested': return { label: 'Booking Requested', color: 'text-cyan-700', bgColor: 'bg-cyan-50 border-cyan-200', step: 3 };

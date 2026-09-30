@@ -7,6 +7,7 @@ export type OpportunityStage =
     | 'awb_received'
     | 'waiting_for_pickup'
     | 'picked_up'
+    | 'delivered'
     | 'payment_received';
 
 // Closure status - separate from stage
@@ -58,6 +59,8 @@ export interface Opportunity {
         docs_count?: number;
         awb_number?: string | null;
         awb_file_url?: string | null;
+        tracking_status?: string | null;
+        delivered_at?: string | null;
         booking_share_token?: string | null;
     }[];
 
@@ -82,6 +85,7 @@ export const STAGE_LABELS: Record<OpportunityStage, string> = {
     awb_received: 'AWB Received',
     waiting_for_pickup: 'Waiting for Pickup',
     picked_up: 'Picked Up',
+    delivered: 'Delivered',
     payment_received: 'Payment Received',
 };
 
@@ -94,5 +98,6 @@ export const STAGE_COLORS: Record<OpportunityStage, string> = {
     awb_received: 'bg-cyan-50 text-cyan-700 border-cyan-200',
     waiting_for_pickup: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     picked_up: 'bg-teal-50 text-teal-700 border-teal-200',
+    delivered: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     payment_received: 'bg-amber-50 text-amber-700 border-amber-200',
 };

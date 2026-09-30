@@ -40,6 +40,45 @@ Run migration: `Tr/migrations/012_add_booking_email_drafted.sql`
 | `build_booking_email_draft` | Subject + body + to/cc (OMG format); auto net from docs |
 | `mark_booking_email_drafted` | Idempotent drafted flag |
 
+Run migration: `Tr/migrations/023_awb_tracking_delivered.sql`
+
+## Delivery tracking tools (Grok daily AWB check)
+
+The app does **not** scrape airline sites. Grok checks carrier tracking pages and reports status via MCP.
+
+| Tool | Purpose |
+|------|---------|
+| `list_awbs_to_track` | AWBs on Op cards at `picked_up` or later, not yet `delivered_at` |
+| `update_awb_tracking` | Append history + update status; `delivered` sets date, advances Op stage, sends customer email **once** |
+| `get_awb_tracking` | Current status, history, notification log (by AWB or OMG number) |
+
+**`tracking_status` values:** `not_tracked`, `booked`, `departed`, `in_transit`, `arrived`, `delivered`, `exception`
+
+**AWB input:** with or without dash/space (`217-1064 8864` or `21710648864`).
+
+**When reporting delivered**, pass `delivered_at` as ISO datetime **with timezone offset** from the airline (e.g. `2026-09-30T14:20:00+02:00`) so the customer email shows destination local time.
+
+**Suggested daily flow (08:00 Asia/Bangkok):**
+
+1. `list_awbs_to_track()`
+2. For each row, open the airline tracking page Grok already uses
+3. If status is Delivered → `update_awb_tracking({ awb_number, status: "delivered", raw_text, source_url, delivered_at })`
+4. Otherwise → `update_awb_tracking` with the current status (no `delivered_at` required)
+
+**Idempotency:** Calling `update_awb_tracking` again with `delivered` returns `{ already_delivered: true, email: "skipped" }` — no duplicate email.
+
+Example:
+
+```json
+{
+  "awb_number": "217-1064 8864",
+  "status": "delivered",
+  "raw_text": "Shipment delivered to consignee",
+  "source_url": "https://www.example-airline.com/track/21710648864",
+  "delivered_at": "2026-09-30T14:20:00+02:00"
+}
+```
+
 ## Connect Grok Bot (xAI API)
 
 ```json

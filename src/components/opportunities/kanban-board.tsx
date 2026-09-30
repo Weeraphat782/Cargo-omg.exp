@@ -83,6 +83,7 @@ const STAGES: OpportunityStage[] = [
     'awb_received',
     'waiting_for_pickup',
     'picked_up',
+    'delivered',
     'payment_received',
 ];
 
@@ -233,6 +234,7 @@ export function KanbanBoard({ initialOpportunities, onStageChange, onEditOpportu
             case 'booking_requested': return 60;
             case 'awb_received': return 75;
             case 'picked_up': return 80;
+            case 'delivered': return 82;
             case 'payment_received': return 85;
             default: return 0;
         }

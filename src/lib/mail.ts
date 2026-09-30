@@ -1,6 +1,8 @@
 import { Resend } from 'resend';
 import type { StoredAttribution } from '@/lib/contact-attribution';
 import { formatAttributionLine } from '@/lib/contact-attribution';
+import { buildDeliveredEmailContent } from '@/lib/awb-tracking/delivered-email';
+import type { QuotationRow } from '@/lib/awb-tracking/core';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -20,11 +22,13 @@ function resolveRecipients() {
 
 async function sendEmailToRecipients({
   to,
+  bcc,
   subject,
   html,
   text,
 }: {
   to: string[];
+  bcc?: string[];
   subject: string;
   html: string;
   text: string;
@@ -40,9 +44,11 @@ async function sendEmailToRecipients({
   }
 
   try {
+    const bccList = [...new Set((bcc ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean))];
     const { data, error } = await resend.emails.send({
       from: resolveSender(),
       to: recipients,
+      ...(bccList.length ? { bcc: bccList } : {}),
       subject,
       html,
       text,
@@ -279,4 +285,48 @@ export async function sendQcRequestNotification({
   ].join('\n');
 
   return sendEmailToRecipients({ to, subject, html, text });
+}
+
+const DELIVERED_BCC = 'cargo@omgexp.com';
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Delivered notification with up to 3 attempts (1s, 3s backoff). */
+export async function sendDeliveredNotification(opts: {
+  quotation: QuotationRow;
+  recipients: string[];
+  source_url: string;
+  delivered_at: string;
+  delivered_local_offset?: string | null;
+}) {
+  const { subject, html, text } = buildDeliveredEmailContent({
+    quotation: opts.quotation,
+    source_url: opts.source_url,
+    delivered_at: opts.delivered_at,
+    delivered_local_offset: opts.delivered_local_offset,
+  });
+
+  const to = [...new Set(opts.recipients.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+  if (to.length === 0) throw new Error('No recipients for delivered email.');
+
+  const delays = [0, 1000, 3000];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (delays[attempt]) await sleep(delays[attempt]);
+    try {
+      const data = await sendEmailToRecipients({
+        to,
+        bcc: [DELIVERED_BCC],
+        subject,
+        html,
+        text,
+      });
+      return data;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('Delivered email failed after 3 attempts.');
 }

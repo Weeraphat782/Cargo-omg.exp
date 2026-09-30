@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 import { QuotationDocuments } from '@/components/quotations/quotation-documents';
 import { ShippingDocumentsUpload } from '@/components/quotations/shipping-documents-upload';
+import { AwbTrackingPanel } from '@/components/awb-tracking/awb-tracking-panel';
 import { StageProgressBar } from '@/components/opportunities/stage-progress-bar';
 import { ContactWidget } from '@/components/opportunities/contact-widget';
 import { OpportunityTasks } from '@/components/opportunities/opportunity-tasks';
@@ -469,6 +470,12 @@ export default function OpportunityDetailPage({ params }: { params: Promise<{ id
                                                         customsDeclarationUploadedAt={quote.customs_declaration_uploaded_at}
                                                         storageProvider={quote.storage_provider}
                                                         onUpdate={() => fetchOpportunity()}
+                                                    />
+
+                                                    <AwbTrackingPanel
+                                                        quotationId={quote.id}
+                                                        awbNumber={quote.awb_number}
+                                                        omgNumber={quote.quotation_no}
                                                     />
 
                                                     <div className="flex justify-end gap-2 mt-4 hidden lg:flex">

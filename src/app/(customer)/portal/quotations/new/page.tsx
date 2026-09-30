@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -8,7 +8,7 @@ import {
     Loader2, CheckCircle2, AlertCircle, Upload, Check, Eye, Leaf,
     ChevronUp, ChevronDown, FileText, Building2, FlaskConical, Thermometer,
 } from 'lucide-react';
-import { createCustomerQuoteRequest, submitCustomerDocument } from '@/lib/customer-db';
+import { createCustomerQuoteRequest, getSavedNotifyRecipients, submitCustomerDocument, upsertSavedNotifyRecipients } from '@/lib/customer-db';
 import { useCustomerAuth } from '@/contexts/customer-auth-context';
 import {
     ALL_COMMODITY_TYPES,
@@ -118,6 +118,15 @@ export default function NewQuoteRequestPage() {
     const [qcInterested, setQcInterested] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [submittedQuotationId, setSubmittedQuotationId] = useState<string | null>(null);
+    const [extraNotifyEmails, setExtraNotifyEmails] = useState<string[]>([]);
+    const [notifyInput, setNotifyInput] = useState('');
+    const [rememberNotifyRecipients, setRememberNotifyRecipients] = useState(false);
+
+    useEffect(() => {
+        void getSavedNotifyRecipients().then((saved) => {
+            if (saved.length) setExtraNotifyEmails(saved);
+        });
+    }, []);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     // Step 3 upload state
@@ -271,7 +280,8 @@ export default function NewQuoteRequestPage() {
                 consignee.trim(),
                 submitNotes,
                 commodity,
-                phytoRequired
+                phytoRequired,
+                { extraNotifyEmails, rememberNotifyRecipients }
             );
 
             if (result.success && result.quotationId) {
@@ -544,6 +554,55 @@ export default function NewQuoteRequestPage() {
                         {errors['requestedDestination'] && (
                             <p className="text-xs text-red-500 mt-1">{errors['requestedDestination']}</p>
                         )}
+                    </div>
+
+                    <div className="bg-white rounded-sm border border-gray-100 p-5 space-y-3">
+                        <h3 className="text-sm font-bold text-gray-700">Notify when delivered</h3>
+                        <p className="text-xs text-gray-500">We will email these addresses when your shipment is delivered.</p>
+                        {profile?.email && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 text-xs text-gray-700 border border-gray-200">
+                            {profile.email} <span className="text-gray-400">(you)</span>
+                            </span>
+                        )}
+                        <div className="flex flex-wrap gap-1.5">
+                            {extraNotifyEmails.map((email) => (
+                                <span key={email} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-xs text-emerald-800 border border-emerald-200">
+                                    {email}
+                                    <button type="button" className="text-emerald-600 hover:text-red-500" onClick={async () => {
+                                        const next = extraNotifyEmails.filter((e) => e !== email);
+                                        setExtraNotifyEmails(next);
+                                        if (rememberNotifyRecipients) await upsertSavedNotifyRecipients(next);
+                                    }}>×</button>
+                                </span>
+                            ))}
+                        </div>
+                        {extraNotifyEmails.length < 10 && (
+                            <div className="flex gap-2 flex-wrap">
+                                <input
+                                    type="email"
+                                    placeholder="Add email"
+                                    value={notifyInput}
+                                    onChange={(e) => setNotifyInput(e.target.value)}
+                                    className="flex-1 min-w-[180px] px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                                />
+                                <button
+                                    type="button"
+                                    className="px-3 py-2 text-xs font-semibold rounded-lg border border-gray-200 hover:bg-gray-50"
+                                    onClick={() => {
+                                        const e = notifyInput.trim().toLowerCase();
+                                        if (!e.includes('@') || extraNotifyEmails.includes(e) || e === profile?.email?.toLowerCase()) return;
+                                        setExtraNotifyEmails([...extraNotifyEmails, e]);
+                                        setNotifyInput('');
+                                    }}
+                                >
+                                    Add
+                                </button>
+                            </div>
+                        )}
+                        <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                            <Checkbox checked={rememberNotifyRecipients} onCheckedChange={(v) => setRememberNotifyRecipients(Boolean(v))} />
+                            Remember these recipients for next quote
+                        </label>
                     </div>
 
                     <div className="bg-white rounded-sm border border-gray-100 p-5">

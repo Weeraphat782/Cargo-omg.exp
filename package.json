@@ -18,6 +18,7 @@
     "verify:coa": "node scripts/verify-coa.mjs",
     "verify:thai-cargo-tracking": "node scripts/verify-thai-cargo-tracking.cjs",
     "verify:booking-draft": "node scripts/verify-booking-draft.cjs",
+    "verify:awb-delivered": "npx tsx scripts/verify-awb-delivered.ts",
     "verify:animation": "npx ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" src/components/social-artwork/video/animation.ts",
     "verify:t5": "node scripts/verify-t5-highlight.cjs"
   },

@@ -384,6 +384,14 @@ export interface Quotation {
   awb_uploaded_at?: string | null;
   awb_number?: string | null;
   awb_number_source?: 'gemini' | 'manual' | 'airfreight' | string | null;
+  carrier_code?: string | null;
+  carrier_code_manual?: boolean | null;
+  tracking_status?: string | null;
+  tracking_status_raw?: string | null;
+  tracking_checked_at?: string | null;
+  delivered_at?: string | null;
+  delivered_local_offset?: string | null;
+  delivery_notify_emails?: string[] | null;
   customs_declaration_file_url?: string | null;
   customs_declaration_file_name?: string | null;
   customs_declaration_uploaded_at?: string | null;

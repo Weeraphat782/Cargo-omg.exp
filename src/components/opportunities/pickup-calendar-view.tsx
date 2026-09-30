@@ -50,6 +50,7 @@ const STAGE_DOT: Record<OpportunityStage, string> = {
   awb_received: 'bg-cyan-500',
   waiting_for_pickup: 'bg-emerald-500',
   picked_up: 'bg-teal-500',
+  delivered: 'bg-emerald-600',
   payment_received: 'bg-amber-500',
 };
 

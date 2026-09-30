@@ -372,6 +372,34 @@ export async function saveCustomerSetting(category: string, key: string, value: 
  * ลูกค้าใส่แค่ pallet dimensions + notes
  * Staff จะเป็นคน approve และใส่ destination/company/rate ภายหลัง
  */
+export async function getSavedNotifyRecipients(): Promise<string[]> {
+  try {
+    await loadSession();
+    const { data: { user } } = await queryClient.auth.getUser();
+    if (!user) return [];
+    const { data } = await queryClient
+      .from('saved_notify_recipients')
+      .select('emails')
+      .eq('customer_user_id', user.id)
+      .maybeSingle();
+    return (data?.emails as string[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertSavedNotifyRecipients(emails: string[]): Promise<void> {
+  await loadSession();
+  const { data: { user } } = await queryClient.auth.getUser();
+  if (!user) return;
+  const cleaned = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))].slice(0, 10);
+  await queryClient.from('saved_notify_recipients').upsert({
+    customer_user_id: user.id,
+    emails: cleaned,
+    updated_at: new Date().toISOString(),
+  });
+}
+
 export async function createCustomerQuoteRequest(
   pallets: { length: number; width: number; height: number; weight: number; quantity: number }[],
   requestedDestination: string,
@@ -379,6 +407,7 @@ export async function createCustomerQuoteRequest(
   notes?: string,
   commodity: CommodityType = 'cannabis',
   phytoRequired: boolean = false,
+  notifyOptions?: { extraNotifyEmails?: string[]; rememberNotifyRecipients?: boolean },
 ): Promise<{ success: boolean; quotationId?: string; error?: string }> {
   try {
     await loadSession();
@@ -393,8 +422,14 @@ export async function createCustomerQuoteRequest(
     ]);
 
     const customerName = profile?.full_name || profile?.email || 'Customer';
+    const requesterEmail = (profile?.email as string | undefined)?.trim().toLowerCase() || '';
     const companyName = customerCompany?.name || profile?.company || '';
     const companyId = customerCompany?.id || null;
+
+    const extra = (notifyOptions?.extraNotifyEmails ?? [])
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => e.includes('@') && e !== requesterEmail);
+    const deliveryNotifyEmails = [...new Set(extra)].slice(0, 10);
 
     if (!companyName.trim()) {
       return {
@@ -439,6 +474,7 @@ export async function createCustomerQuoteRequest(
         total_freight_cost: 0,
         clearance_cost: 0,
         delivery_cost: 0,
+        delivery_notify_emails: deliveryNotifyEmails,
       })
       .select('id')
       .single();
@@ -450,6 +486,10 @@ export async function createCustomerQuoteRequest(
     }
 
     const quotationId = data?.id;
+
+    if (notifyOptions?.rememberNotifyRecipients && deliveryNotifyEmails.length > 0) {
+      await upsertSavedNotifyRecipients(deliveryNotifyEmails);
+    }
 
     // Auto-link company-level documents to the new quotation
     if (quotationId) {

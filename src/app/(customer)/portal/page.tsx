@@ -26,11 +26,13 @@ function formatPayableThb(amount: number) {
     return `฿${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function getStageDisplay(stage?: string, status?: string) {
+function getStageDisplay(stage?: string, status?: string, deliveredAt?: string | null) {
+    if (deliveredAt || stage === 'delivered') return { label: 'Delivered', color: 'text-[#4a9c2d]', bgColor: 'bg-[#eaf6e0] border-[#4a9c2d]/20', step: 6, barColor: 'bg-[#4a9c2d]' };
     if (status === 'completed') return { label: 'Delivered', color: 'text-[#4a9c2d]', bgColor: 'bg-[#eaf6e0] border-[#4a9c2d]/20', step: 6, barColor: 'bg-[#4a9c2d]' };
     if (status === 'Shipped') return { label: 'Shipped', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 4, barColor: 'bg-[#184878]' };
     switch (stage) {
-        case 'payment_received': return { label: 'Delivered', color: 'text-[#4a9c2d]', bgColor: 'bg-[#eaf6e0] border-[#4a9c2d]/20', step: 6, barColor: 'bg-[#4a9c2d]' };
+        case 'payment_received': return { label: 'Payment received', color: 'text-[#e0a209]', bgColor: 'bg-[#fef9e7] border-[#e0a209]/30', step: 6, barColor: 'bg-[#e0a209]' };
+        case 'picked_up': return { label: 'Picked up', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 5, barColor: 'bg-[#2c6fac]' };
         case 'waiting_for_pickup': return { label: 'Waiting for Pick Up', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 5, barColor: 'bg-[#2c6fac]' };
         case 'awb_received': return { label: 'AWB Received', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 4, barColor: 'bg-[#184878]' };
         case 'booking_requested': return { label: 'Booking Requested', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 3, barColor: 'bg-[#2c6fac]' };
@@ -41,7 +43,8 @@ function getStageDisplay(stage?: string, status?: string) {
 }
 
 function isShipmentCompleted(q: Quotation): boolean {
-    return getStageDisplay(q.opportunities?.stage, q.status).step === 6;
+    const sc = getStageDisplay(q.opportunities?.stage, q.status, q.delivered_at);
+    return sc.label === 'Delivered';
 }
 
 function isPricingPending(q: Quotation): boolean {
@@ -69,7 +72,7 @@ function MiniProgress({ step }: { step: number }) {
 // ============ SHIPMENT LIST CARD ============
 
 function ShipmentListCard({ q }: { q: Quotation }) {
-    const sc = getStageDisplay(q.opportunities?.stage, q.status);
+    const sc = getStageDisplay(q.opportunities?.stage, q.status, q.delivered_at);
     const pricingPending = isPricingPending(q);
 
     return (
@@ -222,15 +225,15 @@ export default function MyShipmentsPage() {
     const stats = useMemo(() => {
         const total = quotations.length;
         const active = quotations.filter(q => {
-            const s = getStageDisplay(q.opportunities?.stage, q.status);
+            const s = getStageDisplay(q.opportunities?.stage, q.status, q.delivered_at);
             return s.step > 0 && s.step < 4;
         }).length;
         const shipped = quotations.filter(q => {
-            const s = getStageDisplay(q.opportunities?.stage, q.status);
+            const s = getStageDisplay(q.opportunities?.stage, q.status, q.delivered_at);
             return s.step === 4 || s.step === 5;
         }).length;
         const delivered = quotations.filter(q => {
-            const s = getStageDisplay(q.opportunities?.stage, q.status);
+            const s = getStageDisplay(q.opportunities?.stage, q.status, q.delivered_at);
             return s.step === 6;
         }).length;
         return { total, active, shipped, delivered };

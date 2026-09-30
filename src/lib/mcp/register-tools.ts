@@ -13,6 +13,8 @@ import {
   updateOpCard,
   updateQuotationNetWeight,
 } from '@/lib/mcp/booking-service';
+import { getAwbTracking, listAwbsToTrack, updateAwbTracking } from '@/lib/awb-tracking/service';
+import { TRACKING_STATUSES } from '@/lib/awb-tracking/core';
 
 const refInputSchema = fromJsonSchema<{ quotation_id?: string; omg_number?: string }>({
   type: 'object',
@@ -183,6 +185,7 @@ const OP_STAGES = [
   'awb_received',
   'waiting_for_pickup',
   'picked_up',
+  'delivered',
   'payment_received',
 ] as const;
 
@@ -447,6 +450,94 @@ export function registerBookingTools(server: McpServer): void {
       const card = await getOpCard(ref);
       if (!card) return jsonText({ error: 'Opportunity not found.' });
       return jsonText(card);
+    }
+  );
+
+  const awbRefInputSchema = fromJsonSchema<{ awb_number?: string; omg_number?: string }>({
+    type: 'object',
+    properties: {
+      awb_number: { type: 'string', description: 'AWB with or without dash/space' },
+      omg_number: { type: 'string', description: 'OMG quotation number' },
+    },
+    additionalProperties: false,
+  });
+
+  const updateAwbTrackingInputSchema = fromJsonSchema<{
+    awb_number: string;
+    status: string;
+    raw_text: string;
+    source_url: string;
+    delivered_at?: string;
+  }>({
+    type: 'object',
+    properties: {
+      awb_number: { type: 'string' },
+      status: { type: 'string', enum: [...TRACKING_STATUSES] },
+      raw_text: { type: 'string' },
+      source_url: { type: 'string' },
+      delivered_at: { type: 'string', description: 'ISO datetime with offset when delivered' },
+    },
+    required: ['awb_number', 'status', 'raw_text', 'source_url'],
+    additionalProperties: false,
+  });
+
+  const awbRefSchema = z
+    .object({
+      awb_number: z.string().min(1).optional(),
+      omg_number: z.string().min(1).optional(),
+    })
+    .refine((a) => a.awb_number || a.omg_number, 'Provide awb_number or omg_number');
+
+  const updateAwbTrackingSchema = z.object({
+    awb_number: z.string().min(1),
+    status: z.enum(TRACKING_STATUSES),
+    raw_text: z.string(),
+    source_url: z.string(),
+    delivered_at: z.string().optional(),
+  });
+
+  server.registerTool(
+    'list_awbs_to_track',
+    {
+      description:
+        'List shipments with AWB on Op cards at picked_up or later that are not yet delivered. For daily airline checks.',
+      inputSchema: fromJsonSchema<Record<string, never>>({
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      }),
+    },
+    async () => jsonText(await listAwbsToTrack())
+  );
+
+  server.registerTool(
+    'update_awb_tracking',
+    {
+      description:
+        'Record airline tracking status from Grokbot. Appends history. When status=delivered, sets delivered_at, advances Op stage, sends customer email once (idempotent).',
+      inputSchema: updateAwbTrackingInputSchema,
+    },
+    async (args) => {
+      const parsed = parseOrThrow(updateAwbTrackingSchema, args);
+      const result = await updateAwbTracking({
+        ...parsed,
+        created_by: 'grok-bot',
+      });
+      return jsonText(result);
+    }
+  );
+
+  server.registerTool(
+    'get_awb_tracking',
+    {
+      description: 'Current tracking status, history, and notification log for an AWB or OMG number.',
+      inputSchema: awbRefInputSchema,
+    },
+    async (args) => {
+      const ref = parseOrThrow(awbRefSchema, args);
+      const data = await getAwbTracking(ref);
+      if (!data) return jsonText({ error: 'Not found.' });
+      return jsonText(data);
     }
   );
 }

@@ -23,6 +23,7 @@ import { useRouter } from 'next/navigation';
 import { getQuotationPayableTotalThb } from '@/lib/db';
 import { getFileUrl } from '@/lib/storage';
 import { COMMODITY_META, normalizeCommodityType } from '@/lib/document-presets';
+import { TrackingStatusBadge } from '@/components/awb-tracking/awb-tracking-panel';
 
 interface KanbanCardProps {
   opportunity: Opportunity;
@@ -785,6 +786,7 @@ export function KanbanCard({ opportunity, onEdit, onDelete, onWinCase, onLoseCas
                     <Plane className="h-3 w-3 text-orange-700 shrink-0" />
                     <span className="font-bold text-orange-800 uppercase">AWB:</span>
                     <span className="text-orange-900 font-semibold truncate">{awbNumber}</span>
+                    <TrackingStatusBadge status={targetQuotation.tracking_status} />
                   </button>
                   {targetQuotation.awb_file_url && (
                     <button

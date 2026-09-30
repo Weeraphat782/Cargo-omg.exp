@@ -95,11 +95,13 @@ function groupPallets(pallets: Pallet[]) {
     return Object.values(groups);
 }
 
-function getStageDisplay(stage?: string, status?: string) {
+function getStageDisplay(stage?: string, status?: string, deliveredAt?: string | null) {
+    if (deliveredAt || stage === 'delivered') return { label: 'Delivered', color: 'text-[#4a9c2d]', bgColor: 'bg-[#eaf6e0] border-[#4a9c2d]/20', step: 6 };
     if (status === 'completed') return { label: 'Delivered', color: 'text-[#4a9c2d]', bgColor: 'bg-[#eaf6e0] border-[#4a9c2d]/20', step: 6 };
     if (status === 'Shipped') return { label: 'Shipped', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 4 };
     switch (stage) {
-        case 'payment_received': return { label: 'Delivered', color: 'text-[#4a9c2d]', bgColor: 'bg-[#eaf6e0] border-[#4a9c2d]/20', step: 6 };
+        case 'payment_received': return { label: 'Payment received', color: 'text-[#e0a209]', bgColor: 'bg-[#fef9e7] border-[#e0a209]/30', step: 6 };
+        case 'picked_up': return { label: 'Picked up', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 5 };
         case 'waiting_for_pickup': return { label: 'Waiting for Pick Up', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 5 };
         case 'awb_received': return { label: 'AWB Received', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 4 };
         case 'booking_requested': return { label: 'Booking Requested', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 3 };
@@ -770,7 +772,7 @@ export default function ShipmentDetailPage() {
     if (!quotation || !totals) return null;
 
     const q = quotation;
-    const sc = getStageDisplay(q.opportunities?.stage, q.status);
+    const sc = getStageDisplay(q.opportunities?.stage, q.status, (q as { delivered_at?: string | null }).delivered_at);
 
     return (
         <div className="max-w-5xl mx-auto space-y-6" suppressHydrationWarning>

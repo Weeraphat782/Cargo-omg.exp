@@ -15,6 +15,7 @@ const STAGES: OpportunityStage[] = [
     'pending_booking',
     'booking_requested',
     'awb_received',
+    'delivered',
     'payment_received'
 ];
 

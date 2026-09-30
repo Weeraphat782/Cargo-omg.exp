@@ -135,7 +135,7 @@ export default function OpportunitiesPage() {
         quotations(
           id, price_confirmed, total_cost, vat_amount, wht_amount, wht_enabled, quotation_no,
           customer_user_id, phyto_required, notes, commodity_type, status, consignee_name,
-          awb_number, awb_file_url, booking_share_token,
+          awb_number, awb_file_url, booking_share_token, tracking_status, delivered_at,
           document_submissions(count)
         ),
         destination:destination_id(country, port),
@@ -195,6 +195,8 @@ export default function OpportunitiesPage() {
           awb_number?: string | null;
           awb_file_url?: string | null;
           booking_share_token?: string | null;
+          tracking_status?: string | null;
+          delivered_at?: string | null;
           document_submissions?: { count: number }[];
         }[];
         opportunity_products?: { product: { id: string; name: string } }[];
@@ -231,6 +233,8 @@ export default function OpportunitiesPage() {
               awb_number: q.awb_number ?? null,
               awb_file_url: q.awb_file_url ?? null,
               booking_share_token: q.booking_share_token ?? null,
+              tracking_status: q.tracking_status ?? null,
+              delivered_at: q.delivered_at ?? null,
             }))
           : [];
 
@@ -725,6 +729,7 @@ export default function OpportunitiesPage() {
       case 'booking_requested': return 60;
       case 'awb_received': return 75;
       case 'picked_up': return 80;
+      case 'delivered': return 82;
       case 'payment_received': return 85;
       default: return 0;
     }

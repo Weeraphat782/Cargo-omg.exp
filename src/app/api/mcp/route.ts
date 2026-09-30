@@ -20,7 +20,7 @@ function verifyToken(_req: Request, bearerToken?: string) {
   return {
     token: bearerToken,
     clientId: 'omgexp-mcp',
-    scopes: ['booking:read', 'booking:draft'],
+    scopes: ['booking:read', 'booking:draft', 'tracking:write'],
   };
 }
 

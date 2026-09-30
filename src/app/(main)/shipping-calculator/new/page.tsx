@@ -47,6 +47,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { ALL_COMMODITY_TYPES, COMMODITY_META, normalizeCommodityType } from '@/lib/document-presets';
 import { toast } from 'sonner';
+import { AwbTrackingPanel } from '@/components/awb-tracking/awb-tracking-panel';
 // import Link from 'next/link'; // Removed unused import
 
 // --- Pallet Schema ---
@@ -2793,6 +2794,14 @@ function ShippingCalculatorPageContent() {
                             : isEditMode ? 'Update Quotation' : 'Confirm & Save')}
                     </Button>
                 </CardFooter>
+
+                {isEditMode && quotationId && existingQuotation?.awb_number && (
+                    <AwbTrackingPanel
+                        quotationId={quotationId}
+                        awbNumber={existingQuotation.awb_number}
+                        omgNumber={existingQuotation.quotation_no}
+                    />
+                )}
             </form>
         </FormProvider>
     );
