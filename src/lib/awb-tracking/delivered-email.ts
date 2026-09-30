@@ -140,7 +140,7 @@ export function buildDeliveredEmailContent(opts: {
   const logoUrl = absoluteUrl('/email-logo.png');
   const html = `<!DOCTYPE html><html><body style="margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;">
 <div style="max-width:560px;margin:24px auto;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
-<div style="background:#ffffff;padding:20px 24px;border-bottom:1px solid #e2e8f0;"><img src="${escapeHtml(logoUrl)}" width="160" alt="OMG Cargo" style="display:block;border:0;height:auto;" /></div>
+<div style="background:#ffffff;padding:20px 24px;border-bottom:1px solid #e2e8f0;text-align:center;"><img src="${escapeHtml(logoUrl)}" width="160" alt="OMG Cargo" style="display:inline-block;border:0;height:auto;" /></div>
 <div style="padding:24px;">
 <p style="margin:0 0 16px;font-size:16px;color:#0f172a;">Your shipment has been <strong>delivered</strong>.</p>
 <table style="width:100%;border-collapse:collapse;">${tableRows}</table>
