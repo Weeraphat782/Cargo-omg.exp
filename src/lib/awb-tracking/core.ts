@@ -79,6 +79,9 @@ export function carrierFromAwb(normalized: string): string | null {
   return AWB_PREFIX_CARRIER[normalized.slice(0, 3)] ?? null;
 }
 
+export const NO_DELIVERED_RECIPIENTS_MSG =
+  'No recipients (no delivery_notify_emails, requester or company email)';
+
 export function resolveDeliveredRecipients(opts: {
   notifyEmails: string[];
   requesterEmail: string | null | undefined;
@@ -349,6 +352,17 @@ export async function applyTrackingUpdate(
       notifyEmails: quotation.delivery_notify_emails ?? [],
       requesterEmail,
     });
+    if (recipients.length === 0) {
+      email = 'failed';
+      return {
+        quotation_id: quotation.id,
+        omg_number: quotation.quotation_no,
+        tracking_status: input.status,
+        already_delivered: false,
+        email,
+        stage_updated: stageUpdated,
+      };
+    }
     const claimResult = await deps.tryClaimAutoEmail(quotation.id, recipients, []);
     if (claimResult === 'already') {
       email = 'claimed_by_other';
@@ -404,6 +418,9 @@ export async function resendDeliveredEmail(
     notifyEmails: quotation.delivery_notify_emails ?? [],
     requesterEmail,
   });
+  if (recipients.length === 0) {
+    throw new Error(NO_DELIVERED_RECIPIENTS_MSG);
+  }
   const logId = await deps.insertManualLog(quotation.id, recipients, bcc);
   const sendResult = await deps.sendDelivered({
     quotation,

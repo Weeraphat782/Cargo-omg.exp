@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import {
   applyTrackingUpdate,
   carrierFromAwb,
+  NO_DELIVERED_RECIPIENTS_MSG,
   normalizeAwb,
   nextStageAfterDelivery,
+  resendDeliveredEmail,
   resolveDeliveredRecipients,
   type QuotationRow,
   type TrackingDeps,
@@ -201,7 +203,98 @@ async function runNoEmailCheck() {
   assert.equal(stage, 'delivered');
 }
 
-Promise.all([runIdempotencyCheck(), runNoEmailCheck()])
+async function runEmptyRecipientsAuto() {
+  let claimCount = 0;
+  const q = makeQuotation({ delivery_notify_emails: [], customer_user_id: null });
+  const deps: TrackingDeps = {
+    findQuotationByAwb: async () => q,
+    insertHistory: async () => {},
+    updateStatus: async () => {},
+    mergeTrackingHints: async () => {},
+    claimDelivered: async () => true,
+    getOpStage: async () => 'picked_up',
+    listQuotationsForOp: async () => [{ id: 'q1', awb_number: q.awb_number, delivered_at: 'x' }],
+    setOpStage: async () => {},
+    resolveRequesterEmail: async () => null,
+    tryClaimAutoEmail: async () => {
+      claimCount++;
+      return 'claimed';
+    },
+    sendDelivered: async () => ({ ok: true }),
+    finalizeAutoLog: async () => {},
+    insertManualLog: async () => 'log1',
+    updateManualLog: async () => {},
+  };
+  const r = await applyTrackingUpdate(deps, {
+    awb_number: '21710648864',
+    status: 'delivered',
+    raw_text: 'x',
+    source_url: '',
+  });
+  assert.equal(r.email, 'failed');
+  assert.equal(claimCount, 0);
+}
+
+async function runResendManualLogRecipients() {
+  let logged: string[] = [];
+  const q = makeQuotation({ delivered_at: '2026-01-01T00:00:00Z' });
+  const deps: TrackingDeps = {
+    findQuotationByAwb: async () => q,
+    insertHistory: async () => {},
+    updateStatus: async () => {},
+    mergeTrackingHints: async () => {},
+    claimDelivered: async () => false,
+    getOpStage: async () => 'delivered',
+    listQuotationsForOp: async () => [],
+    setOpStage: async () => {},
+    resolveRequesterEmail: async () => 'user@example.com',
+    tryClaimAutoEmail: async () => 'already',
+    sendDelivered: async () => ({ ok: true, messageId: 'm1' }),
+    finalizeAutoLog: async () => {},
+    insertManualLog: async (_id, rec) => {
+      logged = rec;
+      return 'log2';
+    },
+    updateManualLog: async () => {},
+  };
+  await resendDeliveredEmail(deps, q, 'https://x', q.delivered_at!, ['cargo@omgexp.com']);
+  assert.ok(logged.length >= 2);
+  assert.ok(logged.includes('notify@example.com'));
+}
+
+async function runResendEmptyThrows() {
+  const q = makeQuotation({ delivery_notify_emails: [], customer_user_id: null, delivered_at: '2026-01-01T00:00:00Z' });
+  const deps: TrackingDeps = {
+    findQuotationByAwb: async () => q,
+    insertHistory: async () => {},
+    updateStatus: async () => {},
+    mergeTrackingHints: async () => {},
+    claimDelivered: async () => false,
+    getOpStage: async () => 'delivered',
+    listQuotationsForOp: async () => [],
+    setOpStage: async () => {},
+    resolveRequesterEmail: async () => null,
+    tryClaimAutoEmail: async () => 'already',
+    sendDelivered: async () => ({ ok: true }),
+    finalizeAutoLog: async () => {},
+    insertManualLog: async () => {
+      throw new Error('should not insert');
+    },
+    updateManualLog: async () => {},
+  };
+  await assert.rejects(
+    () => resendDeliveredEmail(deps, q, '', q.delivered_at!, []),
+    (err: Error) => err.message === NO_DELIVERED_RECIPIENTS_MSG
+  );
+}
+
+Promise.all([
+  runIdempotencyCheck(),
+  runNoEmailCheck(),
+  runEmptyRecipientsAuto(),
+  runResendManualLogRecipients(),
+  runResendEmptyThrows(),
+])
   .then(() => {
     console.log('verify-awb-delivered: ok');
   })

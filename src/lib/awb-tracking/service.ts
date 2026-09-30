@@ -66,9 +66,11 @@ function buildDeps(): TrackingDeps {
         .from('quotations')
         .select(QUOTATION_TRACKING_SELECT)
         .eq('awb_normalized', normalized)
-        .maybeSingle();
-      if (error || !data) return null;
-      return mapQuotationRow(data as Record<string, unknown>);
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (error) throw new Error(error.message);
+      const row = data?.[0];
+      return row ? mapQuotationRow(row as Record<string, unknown>) : null;
     },
     insertHistory: async (row) => {
       const { error } = await supabase.from('tracking_history').insert({
@@ -144,12 +146,30 @@ function buildDeps(): TrackingDeps {
     },
     resolveRequesterEmail: async (quotation) => {
       if (quotation.customer_user_id) {
-        const { data: profile } = await supabase
+        const { data: profile, error: profileErr } = await supabase
           .from('profiles')
           .select('email')
           .eq('id', quotation.customer_user_id)
           .maybeSingle();
+        if (profileErr) throw new Error(profileErr.message);
         if (profile?.email) return profile.email as string;
+      }
+      const { data: qRow, error: qErr } = await supabase
+        .from('quotations')
+        .select('company_id')
+        .eq('id', quotation.id)
+        .maybeSingle();
+      if (qErr) throw new Error(qErr.message);
+      const companyId = qRow?.company_id as string | undefined;
+      if (companyId) {
+        const { data: company, error: coErr } = await supabase
+          .from('companies')
+          .select('contact_email')
+          .eq('id', companyId)
+          .maybeSingle();
+        if (coErr) throw new Error(coErr.message);
+        const contact = (company?.contact_email as string | undefined)?.trim();
+        if (contact) return contact;
       }
       return null;
     },
@@ -297,36 +317,67 @@ export async function listAwbsToTrack(opts?: { days?: number }) {
   return out;
 }
 
-async function fetchQuotationByRef(ref: { awb_number?: string; omg_number?: string }) {
+export async function resolveQuotation(ref: {
+  awb_number?: string;
+  omg_number?: string;
+  quotation_id?: string;
+}): Promise<QuotationRow | null> {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error('Server configuration error.');
 
-  if (ref.awb_number) {
-    const normalized = normalizeAwb(ref.awb_number);
+  const quotationId = ref.quotation_id?.trim();
+  if (quotationId) {
+    const { data, error } = await supabase
+      .from('quotations')
+      .select(QUOTATION_TRACKING_SELECT)
+      .eq('id', quotationId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw new Error(error.message);
+    const row = data?.[0];
+    return row ? mapQuotationRow(row as Record<string, unknown>) : null;
+  }
+
+  const omg = ref.omg_number?.trim().toUpperCase();
+  if (omg) {
+    const { data, error } = await supabase
+      .from('quotations')
+      .select(QUOTATION_TRACKING_SELECT)
+      .eq('quotation_no', omg)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw new Error(error.message);
+    const row = data?.[0];
+    return row ? mapQuotationRow(row as Record<string, unknown>) : null;
+  }
+
+  const awbRaw = ref.awb_number?.trim();
+  if (awbRaw) {
+    const normalized = normalizeAwb(awbRaw);
     if (!normalized) throw new Error('Invalid AWB.');
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('quotations')
       .select(QUOTATION_TRACKING_SELECT)
       .eq('awb_normalized', normalized)
-      .maybeSingle();
-    return data ? mapQuotationRow(data as Record<string, unknown>) : null;
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw new Error(error.message);
+    const row = data?.[0];
+    return row ? mapQuotationRow(row as Record<string, unknown>) : null;
   }
-  if (ref.omg_number) {
-    const { data } = await supabase
-      .from('quotations')
-      .select(QUOTATION_TRACKING_SELECT)
-      .eq('quotation_no', ref.omg_number)
-      .maybeSingle();
-    return data ? mapQuotationRow(data as Record<string, unknown>) : null;
-  }
+
   return null;
 }
 
-export async function getAwbTracking(ref: { awb_number?: string; omg_number?: string }) {
+export async function getAwbTracking(ref: {
+  awb_number?: string;
+  omg_number?: string;
+  quotation_id?: string;
+}) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error('Server configuration error.');
 
-  const quotation = await fetchQuotationByRef(ref);
+  const quotation = await resolveQuotation(ref);
   if (!quotation) return null;
 
   const [{ data: history }, { data: notifications }] = await Promise.all([
@@ -358,19 +409,10 @@ export async function manualMarkDelivered(
   ref: { awb_number?: string; omg_number?: string; quotation_id?: string },
   opts?: { send_email?: boolean }
 ) {
-  const supabase = getSupabaseServerClient();
-  if (!supabase) throw new Error('Server configuration error.');
-
-  let awb = ref.awb_number;
-  if (!awb && ref.omg_number) {
-    const q = await fetchQuotationByRef({ omg_number: ref.omg_number });
-    awb = q?.awb_number ?? undefined;
-  }
-  if (!awb && ref.quotation_id) {
-    const { data } = await supabase.from('quotations').select('awb_number').eq('id', ref.quotation_id).maybeSingle();
-    awb = (data?.awb_number as string) ?? undefined;
-  }
-  if (!awb) throw new Error('AWB not found.');
+  const quotation = await resolveQuotation(ref);
+  if (!quotation) throw new Error('Quotation not found.');
+  const awb = quotation.awb_number?.trim();
+  if (!awb) throw new Error('AWB not found on quotation.');
 
   return updateAwbTracking({
     awb_number: awb,
@@ -386,17 +428,7 @@ export async function manualResendDelivered(ref: { awb_number?: string; omg_numb
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error('Server configuration error.');
 
-  let quotation: QuotationRow | null = null;
-  if (ref.awb_number) quotation = await fetchQuotationByRef({ awb_number: ref.awb_number });
-  else if (ref.omg_number) quotation = await fetchQuotationByRef({ omg_number: ref.omg_number });
-  else if (ref.quotation_id) {
-    const { data } = await supabase
-      .from('quotations')
-      .select(QUOTATION_TRACKING_SELECT)
-      .eq('id', ref.quotation_id)
-      .maybeSingle();
-    quotation = data ? mapQuotationRow(data as Record<string, unknown>) : null;
-  }
+  const quotation = await resolveQuotation(ref);
   if (!quotation) throw new Error('Quotation not found.');
   if (!quotation.delivered_at) throw new Error('Shipment is not marked delivered yet.');
 
@@ -415,4 +447,82 @@ export async function manualResendDelivered(ref: { awb_number?: string; omg_numb
     quotation.delivered_at,
     [DELIVERED_BCC]
   );
+}
+
+export async function updateAwbNumber(input: { omg_number: string; awb_number: string; created_by?: string }) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error('Server configuration error.');
+
+  const normalized = normalizeAwb(input.awb_number);
+  if (!normalized) throw new Error('Invalid AWB: must be 11 digits.');
+  const display = formatAwbDisplay(normalized);
+
+  const quotation = await resolveQuotation({ omg_number: input.omg_number });
+  if (!quotation) throw new Error('Quotation not found.');
+
+  const currentNorm = quotation.awb_number ? normalizeAwb(quotation.awb_number) : null;
+  if (currentNorm === normalized) {
+    return {
+      changed: false,
+      quotation_id: quotation.id,
+      omg_number: quotation.quotation_no,
+      awb_number: quotation.awb_number,
+    };
+  }
+
+  const { data: dupRows, error: dupErr } = await supabase
+    .from('quotations')
+    .select('id, quotation_no')
+    .eq('awb_normalized', normalized)
+    .neq('id', quotation.id)
+    .limit(1);
+  if (dupErr) throw new Error(dupErr.message);
+  const dup = dupRows?.[0] as { quotation_no?: string } | undefined;
+  if (dup) {
+    throw new Error(`AWB already used by ${dup.quotation_no || 'another quotation'}.`);
+  }
+
+  const oldAwb = quotation.awb_number;
+  const hadDelivered = Boolean(quotation.delivered_at);
+  const carrier =
+    quotation.carrier_code_manual && quotation.carrier_code
+      ? quotation.carrier_code
+      : carrierFromAwb(normalized);
+
+  const { error: updErr } = await supabase
+    .from('quotations')
+    .update({
+      awb_number: display,
+      tracking_status: 'not_tracked',
+      tracking_status_raw: null,
+      tracking_checked_at: null,
+      delivered_at: null,
+      delivered_local_offset: null,
+      carrier_code: carrier,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', quotation.id);
+  if (updErr) throw new Error(updErr.message);
+
+  const checkedAt = new Date().toISOString();
+  const { error: histErr } = await supabase.from('tracking_history').insert({
+    quotation_id: quotation.id,
+    awb_number: display,
+    status: 'not_tracked',
+    raw_text: `AWB changed from ${oldAwb || '(none)'} to ${display}`,
+    source_url: '',
+    checked_at: checkedAt,
+    created_by: input.created_by || 'mcp',
+  });
+  if (histErr) throw new Error(histErr.message);
+
+  return {
+    changed: true,
+    quotation_id: quotation.id,
+    omg_number: quotation.quotation_no,
+    old_awb: oldAwb,
+    new_awb: display,
+    carrier_code: carrier,
+    delivered_reset: hadDelivered,
+  };
 }

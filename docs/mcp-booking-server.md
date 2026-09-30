@@ -51,7 +51,8 @@ The app does **not** scrape airline sites. Grok checks carrier tracking pages an
 | `list_awbs_to_track` | AWBs on Op at `picked_up`+, not yet `delivered_at`. Optional `days` (default **30**, pickup_date or created_at). `carrier_code` from AWB prefix when not stored. |
 | `update_awb_tracking` | Append history + status; `delivered` sets date, advances Op, email **once** unless `send_email: false`. Optional `flight_no`, `flight_date`, `chargeable_weight_kg` for customer email. |
 | `get_awb_tracking` | Current status, history, notification log (by AWB or OMG number) |
-| `resend_delivered_email` | Resend delivered notification (already delivered); new manual log row |
+| `resend_delivered_email` | Resend delivered notification (already delivered); pass `awb_number` or `omg_number`; new manual log row with real To list |
+| `update_awb_number` | Fix AWB on a quote (`omg_number` + `awb_number`); resets tracking, clears `delivered_at` when changed, logs old AWB in history |
 
 **`tracking_status` values:** `not_tracked`, `booked`, `departed`, `in_transit`, `arrived`, `delivered`, `exception`
 

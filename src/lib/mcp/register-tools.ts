@@ -17,6 +17,7 @@ import {
   getAwbTracking,
   listAwbsToTrack,
   manualResendDelivered,
+  updateAwbNumber,
   updateAwbTracking,
 } from '@/lib/awb-tracking/service';
 import { TRACKING_STATUSES } from '@/lib/awb-tracking/core';
@@ -567,16 +568,36 @@ export function registerBookingTools(server: McpServer): void {
     }
   );
 
+  const updateAwbNumberInputSchema = fromJsonSchema<{ omg_number: string; awb_number: string }>({
+    type: 'object',
+    properties: {
+      omg_number: { type: 'string', description: 'OMG quotation number, e.g. OMG09048' },
+      awb_number: { type: 'string', description: 'New AWB with or without dash/space' },
+    },
+    required: ['omg_number', 'awb_number'],
+    additionalProperties: false,
+  });
+
+  const updateAwbNumberSchema = z.object({
+    omg_number: z.string().min(1),
+    awb_number: z.string().min(1),
+  });
+
   server.registerTool(
     'resend_delivered_email',
     {
-      description: 'Resend delivered notification for an already-delivered AWB/OMG (manual log row, for retests).',
+      description:
+        'Resend delivered notification for an already-delivered shipment (manual log row). Pass awb_number or omg_number.',
       inputSchema: awbRefInputSchema,
     },
     async (args) => {
-      const ref = parseOrThrow(awbRefSchema, args);
-      const result = await manualResendDelivered(ref);
-      return jsonText(result);
+      try {
+        const ref = parseOrThrow(awbRefSchema, args);
+        const result = await manualResendDelivered(ref);
+        return jsonText(result);
+      } catch (err) {
+        return jsonText({ error: err instanceof Error ? err.message : 'Failed.' });
+      }
     }
   );
 
@@ -587,10 +608,32 @@ export function registerBookingTools(server: McpServer): void {
       inputSchema: awbRefInputSchema,
     },
     async (args) => {
-      const ref = parseOrThrow(awbRefSchema, args);
-      const data = await getAwbTracking(ref);
-      if (!data) return jsonText({ error: 'Not found.' });
-      return jsonText(data);
+      try {
+        const ref = parseOrThrow(awbRefSchema, args);
+        const data = await getAwbTracking(ref);
+        if (!data) return jsonText({ error: 'Not found.' });
+        return jsonText(data);
+      } catch (err) {
+        return jsonText({ error: err instanceof Error ? err.message : 'Failed.' });
+      }
+    }
+  );
+
+  server.registerTool(
+    'update_awb_number',
+    {
+      description:
+        'Set or fix AWB on a quotation by OMG number. Normalizes format, resets tracking to not_tracked, clears delivered_at when AWB changes, logs old value in history.',
+      inputSchema: updateAwbNumberInputSchema,
+    },
+    async (args) => {
+      try {
+        const parsed = parseOrThrow(updateAwbNumberSchema, args);
+        const result = await updateAwbNumber({ ...parsed, created_by: 'grok-bot' });
+        return jsonText(result);
+      } catch (err) {
+        return jsonText({ error: err instanceof Error ? err.message : 'Failed.' });
+      }
     }
   );
 }

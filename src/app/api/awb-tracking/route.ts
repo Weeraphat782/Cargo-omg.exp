@@ -5,6 +5,7 @@ import {
   getAwbTracking,
   manualMarkDelivered,
   manualResendDelivered,
+  updateAwbNumber,
   updateAwbTracking,
 } from '@/lib/awb-tracking/service';
 
@@ -50,18 +51,7 @@ export async function GET(request: NextRequest) {
 
   try {
     if (quotationId) {
-      const supabase = getSupabaseServerClient();
-      const { data } = await supabase!
-        .from('quotations')
-        .select('quotation_no, awb_number')
-        .eq('id', quotationId)
-        .maybeSingle();
-      if (!data?.awb_number && !data?.quotation_no) {
-        return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-      }
-      const tracking = await getAwbTracking(
-        data.awb_number ? { awb_number: data.awb_number } : { omg_number: data.quotation_no as string }
-      );
+      const tracking = await getAwbTracking({ quotation_id: quotationId });
       return NextResponse.json(tracking ?? { error: 'Not found.' }, { status: tracking ? 200 : 404 });
     }
     const tracking = await getAwbTracking({ awb_number: awb, omg_number: omg });
@@ -144,6 +134,14 @@ export async function POST(request: NextRequest) {
           .eq('id', body.quotation_id);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
         return NextResponse.json({ success: true });
+      }
+      case 'update_awb_number': {
+        const result = await updateAwbNumber({
+          omg_number: body.omg_number,
+          awb_number: body.awb_number,
+          created_by: 'staff',
+        });
+        return NextResponse.json(result);
       }
       case 'update_tracking': {
         const result = await updateAwbTracking({
