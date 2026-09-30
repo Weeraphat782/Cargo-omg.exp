@@ -21,28 +21,75 @@ function formatInTimeZone(iso: string, timeZone: string, withOffsetLabel: boolea
     });
     const base = fmt.format(d);
     if (!withOffsetLabel) return base;
-    return `${base} (${timeZone.replace('_', ' ')})`;
+    return `${base} (${timeZone.replace(/_/g, ' ')})`;
   } catch {
     return iso;
   }
 }
 
-/** Destination local: use offset embedded in ISO when present. */
-function formatDestinationLocal(iso: string, offset: string | null): string | null {
-  if (!offset || offset === '+00:00') {
-    return null;
-  }
+/** Parse ±HH:MM to minutes east of UTC. */
+export function offsetToMinutes(offset: string): number {
+  const m = offset.match(/^([+-])(\d{2}):(\d{2})$/);
+  if (!m) return 0;
+  const sign = m[1] === '-' ? -1 : 1;
+  return sign * (parseInt(m[2], 10) * 60 + parseInt(m[3], 10));
+}
+
+/** Wall-clock at fixed offset from UTC (for destination local display). */
+function formatWallClockAtOffset(iso: string, offset: string): string | null {
+  const mins = offsetToMinutes(offset);
+  if (!offset || offset === '+00:00') return null;
   try {
-    const d = new Date(iso);
+    const utcMs = new Date(iso).getTime();
+    const wall = new Date(utcMs + mins * 60 * 1000);
     const fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC',
       dateStyle: 'medium',
       timeStyle: 'short',
-      timeZone: 'UTC',
     });
-    return `${fmt.format(d)} (UTC${offset})`;
+    return `${fmt.format(wall)} (UTC${offset})`;
   } catch {
     return null;
   }
+}
+
+export function formatDeliveredTimes(
+  iso: string,
+  deliveredLocalOffset: string | null | undefined
+): { bangkok: string; destinationLocal: string | null } {
+  const bangkok = formatInTimeZone(iso, BKK, true);
+  const offset = deliveredLocalOffset?.trim() || null;
+  const destinationLocal = offset ? formatWallClockAtOffset(iso, offset) : null;
+  return { bangkok, destinationLocal };
+}
+
+function formatFlightLine(q: QuotationRow): string | null {
+  const af = q.booking_air_freight as {
+    flight_no?: string;
+    booked_date?: string;
+  } | null;
+  const flightNo = af?.flight_no?.trim();
+  if (!flightNo) return null;
+  const dateRaw = af?.booked_date?.trim();
+  if (!dateRaw) return flightNo;
+  try {
+    const d = new Date(`${dateRaw}T12:00:00`);
+    const dateLabel = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' }).format(d);
+    return `${flightNo} · ${dateLabel}`;
+  } catch {
+    return flightNo;
+  }
+}
+
+export function effectiveChargeableKg(q: QuotationRow): number | null {
+  if (q.is_chargeable_weight_manual && q.manual_chargeable_weight != null && q.manual_chargeable_weight > 0) {
+    return q.manual_chargeable_weight;
+  }
+  if (q.chargeable_weight != null && q.chargeable_weight > 0) return q.chargeable_weight;
+  const af = q.booking_air_freight as { chargeable_weight_kg?: number } | null;
+  const fromAir = af?.chargeable_weight_kg;
+  if (fromAir != null && Number(fromAir) > 0) return Number(fromAir);
+  return null;
 }
 
 export function buildDeliveredEmailContent(opts: {
@@ -52,29 +99,30 @@ export function buildDeliveredEmailContent(opts: {
   delivered_local_offset?: string | null;
 }): { subject: string; html: string; text: string } {
   const q = opts.quotation;
-  const omg = q.quotation_no || '—';
+  const omg = q.quotation_no || '';
   const norm = q.awb_number ? normalizeAwb(q.awb_number) : null;
-  const awb = norm ? formatAwbDisplay(norm) : q.awb_number || '—';
-  const dest = q.destination || q.requested_destination || '—';
-  const flight = q.booking_air_freight?.flight_no || '—';
+  const awb = norm ? formatAwbDisplay(norm) : q.awb_number || '';
+  const dest = (q.destination || q.requested_destination || '').trim();
+  const flight = formatFlightLine(q);
   const pallets = palletCount(q.pallets);
-  const chg = q.chargeable_weight != null ? `${q.chargeable_weight} kg` : '—';
-  const bangkok = formatInTimeZone(opts.delivered_at, BKK, true);
-  const destLocal = formatDestinationLocal(opts.delivered_at, opts.delivered_local_offset ?? null);
+  const chgKg = effectiveChargeableKg(q);
+  const { bangkok, destinationLocal } = formatDeliveredTimes(
+    opts.delivered_at,
+    opts.delivered_local_offset ?? q.delivered_local_offset
+  );
   const trackLink = opts.source_url?.trim() || '';
 
-  const subject = `Delivered — ${omg} / AWB ${awb}`;
+  const subject = `Delivered — ${omg || 'Shipment'} / AWB ${awb || '—'}`;
 
-  const rows = [
-    ['OMG number', omg],
-    ['AWB', awb],
-    ['Route', `BKK → ${dest}`],
-    ['Flight', flight],
-    ['Pallets', String(pallets || '—')],
-    ['Chargeable weight', chg],
-    ['Delivered (Bangkok)', bangkok],
-    ...(destLocal ? [['Delivered (destination local)', destLocal] as const] : []),
-  ];
+  const rows: [string, string][] = [];
+  if (omg) rows.push(['OMG number', omg]);
+  if (awb) rows.push(['AWB', awb]);
+  if (dest) rows.push(['Route', `BKK → ${dest}`]);
+  if (flight) rows.push(['Flight', flight]);
+  if (pallets > 0) rows.push(['Pallets', String(pallets)]);
+  if (chgKg != null) rows.push(['Chargeable weight', `${chgKg} kg`]);
+  rows.push(['Delivered (Bangkok)', bangkok]);
+  if (destinationLocal) rows.push(['Delivered (destination local)', destinationLocal]);
 
   const textRows = rows.map(([k, v]) => `${k}: ${v}`).join('\n');
   const text = `Your shipment has been delivered.\n\n${textRows}\n\n${trackLink ? `Track: ${trackLink}\n` : ''}— OMG Cargo`;

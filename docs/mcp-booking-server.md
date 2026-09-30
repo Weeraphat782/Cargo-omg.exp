@@ -48,9 +48,10 @@ The app does **not** scrape airline sites. Grok checks carrier tracking pages an
 
 | Tool | Purpose |
 |------|---------|
-| `list_awbs_to_track` | AWBs on Op cards at `picked_up` or later, not yet `delivered_at` |
-| `update_awb_tracking` | Append history + update status; `delivered` sets date, advances Op stage, sends customer email **once** |
+| `list_awbs_to_track` | AWBs on Op at `picked_up`+, not yet `delivered_at`. Optional `days` (default **30**, pickup_date or created_at). `carrier_code` from AWB prefix when not stored. |
+| `update_awb_tracking` | Append history + status; `delivered` sets date, advances Op, email **once** unless `send_email: false`. Optional `flight_no`, `flight_date`, `chargeable_weight_kg` for customer email. |
 | `get_awb_tracking` | Current status, history, notification log (by AWB or OMG number) |
+| `resend_delivered_email` | Resend delivered notification (already delivered); new manual log row |
 
 **`tracking_status` values:** `not_tracked`, `booked`, `departed`, `in_transit`, `arrived`, `delivered`, `exception`
 
@@ -60,9 +61,9 @@ The app does **not** scrape airline sites. Grok checks carrier tracking pages an
 
 **Suggested daily flow (08:00 Asia/Bangkok):**
 
-1. `list_awbs_to_track()`
-2. For each row, open the airline tracking page Grok already uses
-3. If status is Delivered → `update_awb_tracking({ awb_number, status: "delivered", raw_text, source_url, delivered_at })`
+1. `list_awbs_to_track({ days: 30 })` — use `days: 3650` to include old backlog; clear with `send_email: false`
+2. For each row, open the airline tracking page (use `carrier_code` from the list)
+3. If Delivered → `update_awb_tracking({ awb_number, status: "delivered", raw_text, source_url, delivered_at, flight_no?, flight_date?, chargeable_weight_kg? })`
 4. Otherwise → `update_awb_tracking` with the current status (no `delivered_at` required)
 
 **Idempotency:** Calling `update_awb_tracking` again with `delivered` returns `{ already_delivered: true, email: "skipped" }` — no duplicate email.

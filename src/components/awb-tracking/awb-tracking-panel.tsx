@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { formatDeliveredTimes } from '@/lib/awb-tracking/delivered-email';
 import { supabase } from '@/lib/supabase';
 
 type TrackingPayload = {
@@ -16,6 +17,7 @@ type TrackingPayload = {
     tracking_status_raw: string | null;
     tracking_checked_at: string | null;
     delivered_at: string | null;
+    delivered_local_offset?: string | null;
     carrier_code: string | null;
     delivery_notify_emails: string[] | null;
   };
@@ -126,11 +128,18 @@ export function AwbTrackingPanel({
             {q?.tracking_checked_at ? new Date(q.tracking_checked_at).toLocaleString('en-GB') : '—'}
           </p>
           {q?.tracking_status_raw && <p className="text-foreground">Airline: {q.tracking_status_raw}</p>}
-          {q?.delivered_at && (
-            <p className="text-emerald-700">
-              Delivered: {new Date(q.delivered_at).toLocaleString('en-GB')}
-            </p>
-          )}
+          {q?.delivered_at && (() => {
+            const { bangkok, destinationLocal } = formatDeliveredTimes(
+              q.delivered_at,
+              q.delivered_local_offset
+            );
+            return (
+              <div className="text-emerald-700 space-y-0.5">
+                <p>Delivered (Bangkok): {bangkok}</p>
+                {destinationLocal && <p>Delivered (destination local): {destinationLocal}</p>}
+              </div>
+            );
+          })()}
         </div>
 
         <div className="flex flex-wrap gap-2 items-end">
@@ -201,6 +210,15 @@ export function AwbTrackingPanel({
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" disabled={busy || Boolean(q?.delivered_at)} onClick={() => post('mark_delivered')}>
             Mark delivered
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy || Boolean(q?.delivered_at)}
+            onClick={() => post('mark_delivered_no_email')}
+          >
+            Mark delivered (no email)
           </Button>
           <Button
             type="button"

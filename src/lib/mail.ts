@@ -287,7 +287,7 @@ export async function sendQcRequestNotification({
   return sendEmailToRecipients({ to, subject, html, text });
 }
 
-const DELIVERED_BCC = 'cargo@omgexp.com';
+export const DELIVERED_BCC = 'cargo@omgexp.com';
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));

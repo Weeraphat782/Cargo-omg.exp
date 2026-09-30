@@ -85,11 +85,25 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case 'mark_delivered': {
-        const result = await manualMarkDelivered({
-          awb_number: body.awb_number,
-          omg_number: body.omg_number,
-          quotation_id: body.quotation_id,
-        });
+        const result = await manualMarkDelivered(
+          {
+            awb_number: body.awb_number,
+            omg_number: body.omg_number,
+            quotation_id: body.quotation_id,
+          },
+          { send_email: body.send_email !== false }
+        );
+        return NextResponse.json(result);
+      }
+      case 'mark_delivered_no_email': {
+        const result = await manualMarkDelivered(
+          {
+            awb_number: body.awb_number,
+            omg_number: body.omg_number,
+            quotation_id: body.quotation_id,
+          },
+          { send_email: false }
+        );
         return NextResponse.json(result);
       }
       case 'resend_delivered_email': {
@@ -138,6 +152,10 @@ export async function POST(request: NextRequest) {
           raw_text: body.raw_text || '',
           source_url: body.source_url || '',
           delivered_at: body.delivered_at,
+          send_email: body.send_email,
+          flight_no: body.flight_no,
+          flight_date: body.flight_date,
+          chargeable_weight_kg: body.chargeable_weight_kg,
           created_by: 'staff',
         });
         return NextResponse.json(result);

@@ -1,19 +1,22 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server';
-import { sendDeliveredNotification } from '@/lib/mail';
+import { DELIVERED_BCC, sendDeliveredNotification } from '@/lib/mail';
 import {
   applyTrackingUpdate,
+  carrierFromAwb,
   formatAwbDisplay,
   isStagePickedUpOrLater,
+  mergeBookingAirFreightHints,
   normalizeAwb,
   resendDeliveredEmail,
   type ApplyTrackingInput,
+  type BookingAirFreightJson,
   type QuotationRow,
   type TrackingDeps,
   type TrackingStatus,
 } from './core';
 
 const QUOTATION_TRACKING_SELECT =
-  'id, quotation_no, awb_number, opportunity_id, carrier_code, carrier_code_manual, tracking_status, delivered_at, delivery_notify_emails, customer_user_id, destination, requested_destination, customer_name, company_name, chargeable_weight, pallets, booking_air_freight, delivered_local_offset';
+  'id, quotation_no, awb_number, opportunity_id, carrier_code, carrier_code_manual, tracking_status, delivered_at, delivered_local_offset, delivery_notify_emails, customer_user_id, destination, requested_destination, customer_name, company_name, chargeable_weight, is_chargeable_weight_manual, manual_chargeable_weight, pallets, booking_air_freight, created_at';
 
 function mapQuotationRow(data: Record<string, unknown>): QuotationRow {
   return {
@@ -25,6 +28,7 @@ function mapQuotationRow(data: Record<string, unknown>): QuotationRow {
     carrier_code_manual: Boolean(data.carrier_code_manual),
     tracking_status: (data.tracking_status as TrackingStatus) || 'not_tracked',
     delivered_at: (data.delivered_at as string) ?? null,
+    delivered_local_offset: (data.delivered_local_offset as string) ?? null,
     delivery_notify_emails: (data.delivery_notify_emails as string[]) ?? [],
     customer_user_id: (data.customer_user_id as string) ?? null,
     destination: (data.destination as string) ?? null,
@@ -32,9 +36,24 @@ function mapQuotationRow(data: Record<string, unknown>): QuotationRow {
     customer_name: (data.customer_name as string) ?? null,
     company_name: (data.company_name as string) ?? null,
     chargeable_weight: data.chargeable_weight != null ? Number(data.chargeable_weight) : null,
+    is_chargeable_weight_manual: Boolean(data.is_chargeable_weight_manual),
+    manual_chargeable_weight:
+      data.manual_chargeable_weight != null ? Number(data.manual_chargeable_weight) : null,
     pallets: data.pallets,
-    booking_air_freight: (data.booking_air_freight as QuotationRow['booking_air_freight']) ?? null,
+    booking_air_freight: (data.booking_air_freight as BookingAirFreightJson) ?? null,
   };
+}
+
+function referenceDateForList(row: {
+  created_at?: string | null;
+  opportunities?: { pickup_date?: string | null } | { pickup_date?: string | null }[] | null;
+}): string | null {
+  const opp = row.opportunities;
+  const oppRow = Array.isArray(opp) ? opp[0] : opp;
+  const pickup = oppRow?.pickup_date?.trim();
+  if (pickup) return pickup.slice(0, 10);
+  const created = row.created_at?.trim();
+  return created ? created.slice(0, 10) : null;
 }
 
 function buildDeps(): TrackingDeps {
@@ -61,6 +80,15 @@ function buildDeps(): TrackingDeps {
         checked_at: row.checked_at,
         created_by: row.created_by,
       });
+      if (error) throw new Error(error.message);
+    },
+    mergeTrackingHints: async (quotationId, existing, hints) => {
+      const merged = mergeBookingAirFreightHints(existing, hints);
+      if (!merged) return;
+      const { error } = await supabase
+        .from('quotations')
+        .update({ booking_air_freight: merged, updated_at: new Date().toISOString() })
+        .eq('id', quotationId);
       if (error) throw new Error(error.message);
     },
     updateStatus: async (quotationId, patch) => {
@@ -125,14 +153,15 @@ function buildDeps(): TrackingDeps {
       }
       return null;
     },
-    tryClaimAutoEmail: async (quotationId) => {
+    tryClaimAutoEmail: async (quotationId, recipients, bcc) => {
+      const bccList = bcc.length ? bcc : [DELIVERED_BCC];
       const { error } = await supabase.from('notification_log').insert({
         quotation_id: quotationId,
         event: 'delivered',
         send_trigger: 'auto',
         status: 'sending',
-        recipients: [],
-        bcc: ['cargo@omgexp.com'],
+        recipients,
+        bcc: bccList,
         attempts: 0,
       });
       if (error) {
@@ -149,14 +178,13 @@ function buildDeps(): TrackingDeps {
         .eq('id', qRow.id)
         .maybeSingle();
       const quotation = full ? mapQuotationRow(full as Record<string, unknown>) : qRow;
-      const offsetRow = full as { delivered_local_offset?: string | null } | null;
       try {
         const result = await sendDeliveredNotification({
           quotation,
           recipients: opts.recipients,
           source_url: opts.source_url,
           delivered_at: opts.delivered_at,
-          delivered_local_offset: offsetRow?.delivered_local_offset ?? null,
+          delivered_local_offset: quotation.delivered_local_offset ?? null,
         });
         return { ok: true, messageId: result?.id };
       } catch (err) {
@@ -178,7 +206,8 @@ function buildDeps(): TrackingDeps {
         .eq('send_trigger', 'auto');
       if (error) throw new Error(error.message);
     },
-    insertManualLog: async (quotationId, recipients) => {
+    insertManualLog: async (quotationId, recipients, bcc) => {
+      const bccList = bcc.length ? bcc : [DELIVERED_BCC];
       const { data, error } = await supabase
         .from('notification_log')
         .insert({
@@ -187,7 +216,7 @@ function buildDeps(): TrackingDeps {
           send_trigger: 'manual',
           status: 'sending',
           recipients,
-          bcc: ['cargo@omgexp.com'],
+          bcc: bccList,
           attempts: 0,
         })
         .select('id')
@@ -215,15 +244,21 @@ export async function updateAwbTracking(input: ApplyTrackingInput) {
   return applyTrackingUpdate(buildDeps(), input);
 }
 
-export async function listAwbsToTrack() {
+export async function listAwbsToTrack(opts?: { days?: number }) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error('Server configuration error.');
+
+  const days = opts?.days ?? 30;
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  const cutoffYmd = cutoff.toISOString().slice(0, 10);
 
   const { data, error } = await supabase
     .from('quotations')
     .select(
-      `quotation_no, awb_number, carrier_code, tracking_status, tracking_checked_at,
-       destination, requested_destination, customer_name, company_name, opportunity_id, delivered_at`
+      `quotation_no, awb_number, carrier_code, carrier_code_manual, tracking_status, tracking_checked_at,
+       destination, requested_destination, customer_name, company_name, opportunity_id, delivered_at, created_at,
+       opportunities(stage, pickup_date)`
     )
     .not('awb_number', 'is', null)
     .neq('awb_number', '')
@@ -235,16 +270,23 @@ export async function listAwbsToTrack() {
   const out: Record<string, unknown>[] = [];
 
   for (const row of rows) {
-    const oppId = row.opportunity_id as string | null;
-    if (!oppId) continue;
-    const { data: opp } = await supabase.from('opportunities').select('stage').eq('id', oppId).maybeSingle();
-    const stage = (opp?.stage as string) || '';
+    const opp = row.opportunities as { stage?: string; pickup_date?: string | null } | null;
+    const stage = opp?.stage || '';
     if (!isStagePickedUpOrLater(stage)) continue;
+
+    const refYmd = referenceDateForList(row as { created_at?: string; opportunities?: typeof opp });
+    if (refYmd && refYmd < cutoffYmd) continue;
+
+    const norm = normalizeAwb(String(row.awb_number));
+    const derived = norm ? carrierFromAwb(norm) : null;
+    const manual = Boolean(row.carrier_code_manual);
+    const stored = (row.carrier_code as string) || null;
+    const carrier_code = manual && stored ? stored : stored || derived;
 
     out.push({
       omg_number: row.quotation_no,
       awb_number: row.awb_number,
-      carrier_code: row.carrier_code,
+      carrier_code,
       destination: row.destination || row.requested_destination,
       customer: row.customer_name || row.company_name,
       tracking_status: row.tracking_status || 'not_tracked',
@@ -312,7 +354,10 @@ export async function getAwbTracking(ref: { awb_number?: string; omg_number?: st
   };
 }
 
-export async function manualMarkDelivered(ref: { awb_number?: string; omg_number?: string; quotation_id?: string }) {
+export async function manualMarkDelivered(
+  ref: { awb_number?: string; omg_number?: string; quotation_id?: string },
+  opts?: { send_email?: boolean }
+) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error('Server configuration error.');
 
@@ -330,9 +375,10 @@ export async function manualMarkDelivered(ref: { awb_number?: string; omg_number
   return updateAwbTracking({
     awb_number: awb,
     status: 'delivered',
-    raw_text: 'Marked delivered (manual)',
+    raw_text: opts?.send_email === false ? 'Marked delivered (no email)' : 'Marked delivered (manual)',
     source_url: '',
     created_by: 'staff',
+    send_email: opts?.send_email !== false,
   });
 }
 
@@ -366,6 +412,7 @@ export async function manualResendDelivered(ref: { awb_number?: string; omg_numb
     buildDeps(),
     quotation,
     (lastHistory.data?.source_url as string) || '',
-    quotation.delivered_at
+    quotation.delivered_at,
+    [DELIVERED_BCC]
   );
 }

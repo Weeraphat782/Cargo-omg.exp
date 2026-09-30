@@ -13,7 +13,12 @@ import {
   updateOpCard,
   updateQuotationNetWeight,
 } from '@/lib/mcp/booking-service';
-import { getAwbTracking, listAwbsToTrack, updateAwbTracking } from '@/lib/awb-tracking/service';
+import {
+  getAwbTracking,
+  listAwbsToTrack,
+  manualResendDelivered,
+  updateAwbTracking,
+} from '@/lib/awb-tracking/service';
 import { TRACKING_STATUSES } from '@/lib/awb-tracking/core';
 
 const refInputSchema = fromJsonSchema<{ quotation_id?: string; omg_number?: string }>({
@@ -462,12 +467,27 @@ export function registerBookingTools(server: McpServer): void {
     additionalProperties: false,
   });
 
+  const listAwbsToTrackInputSchema = fromJsonSchema<{ days?: number }>({
+    type: 'object',
+    properties: {
+      days: {
+        type: 'number',
+        description: 'Only AWBs with pickup_date (or quotation created_at) within this many days. Default 30. Use 3650 for full backlog.',
+      },
+    },
+    additionalProperties: false,
+  });
+
   const updateAwbTrackingInputSchema = fromJsonSchema<{
     awb_number: string;
     status: string;
     raw_text: string;
     source_url: string;
     delivered_at?: string;
+    send_email?: boolean;
+    flight_no?: string;
+    flight_date?: string;
+    chargeable_weight_kg?: number;
   }>({
     type: 'object',
     properties: {
@@ -475,7 +495,17 @@ export function registerBookingTools(server: McpServer): void {
       status: { type: 'string', enum: [...TRACKING_STATUSES] },
       raw_text: { type: 'string' },
       source_url: { type: 'string' },
-      delivered_at: { type: 'string', description: 'ISO datetime with offset when delivered' },
+      delivered_at: {
+        type: 'string',
+        description: 'ISO datetime with destination timezone offset, e.g. 2026-09-30T14:20:00+02:00',
+      },
+      send_email: {
+        type: 'boolean',
+        description: 'When status=delivered, default true. Set false to mark delivered without customer email.',
+      },
+      flight_no: { type: 'string', description: 'From airline tracking page (merged if not already set)' },
+      flight_date: { type: 'string', description: 'Flight date YYYY-MM-DD from airline page' },
+      chargeable_weight_kg: { type: 'number', description: 'Chargeable kg from airline if not on quotation' },
     },
     required: ['awb_number', 'status', 'raw_text', 'source_url'],
     additionalProperties: false,
@@ -488,33 +518,43 @@ export function registerBookingTools(server: McpServer): void {
     })
     .refine((a) => a.awb_number || a.omg_number, 'Provide awb_number or omg_number');
 
+  const listAwbsToTrackSchema = z.object({
+    days: z.number().int().positive().optional(),
+  });
+
   const updateAwbTrackingSchema = z.object({
     awb_number: z.string().min(1),
     status: z.enum(TRACKING_STATUSES),
     raw_text: z.string(),
     source_url: z.string(),
     delivered_at: z.string().optional(),
+    send_email: z.boolean().optional(),
+    flight_no: z.string().optional(),
+    flight_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'flight_date must be YYYY-MM-DD')
+      .optional(),
+    chargeable_weight_kg: z.number().positive().optional(),
   });
 
   server.registerTool(
     'list_awbs_to_track',
     {
       description:
-        'List shipments with AWB on Op cards at picked_up or later that are not yet delivered. For daily airline checks.',
-      inputSchema: fromJsonSchema<Record<string, never>>({
-        type: 'object',
-        properties: {},
-        additionalProperties: false,
-      }),
+        'List AWBs on Op cards at picked_up+ without delivered_at. Default: pickup_date (or created_at) within 30 days. carrier_code derived from AWB prefix when not stored.',
+      inputSchema: listAwbsToTrackInputSchema,
     },
-    async () => jsonText(await listAwbsToTrack())
+    async (args) => {
+      const parsed = parseOrThrow(listAwbsToTrackSchema, args ?? {});
+      return jsonText(await listAwbsToTrack({ days: parsed.days }));
+    }
   );
 
   server.registerTool(
     'update_awb_tracking',
     {
       description:
-        'Record airline tracking status from Grokbot. Appends history. When status=delivered, sets delivered_at, advances Op stage, sends customer email once (idempotent).',
+        'Record airline tracking from Grokbot. delivered: sets delivered_at, advances Op stage, sends customer email once (unless send_email=false). Pass delivered_at with destination offset.',
       inputSchema: updateAwbTrackingInputSchema,
     },
     async (args) => {
@@ -523,6 +563,19 @@ export function registerBookingTools(server: McpServer): void {
         ...parsed,
         created_by: 'grok-bot',
       });
+      return jsonText(result);
+    }
+  );
+
+  server.registerTool(
+    'resend_delivered_email',
+    {
+      description: 'Resend delivered notification for an already-delivered AWB/OMG (manual log row, for retests).',
+      inputSchema: awbRefInputSchema,
+    },
+    async (args) => {
+      const ref = parseOrThrow(awbRefSchema, args);
+      const result = await manualResendDelivered(ref);
       return jsonText(result);
     }
   );
