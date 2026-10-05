@@ -12,6 +12,7 @@ import { useCustomerAuth } from '@/contexts/customer-auth-context';
 import { getCustomerQuotations, getCustomerPendingRequests, cancelCustomerQuoteRequest } from '@/lib/customer-db';
 import { getQuotationPayableTotalThb, type Quotation } from '@/lib/db';
 import { toast } from 'sonner';
+import { TOUR_POSTER_URL, TOUR_VIDEO_URL } from '@/lib/site';
 
 // ============ HELPERS ============
 
@@ -448,6 +449,21 @@ export default function MyShipmentsPage() {
                                 ? 'Your shipments will appear here once our team assigns quotations to your account.'
                                 : 'Try adjusting your search query.'}
                         </p>
+                        {quotations.length === 0 && (
+                            <div className="mt-8 w-full max-w-[560px] px-4">
+                                <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                                    New here? Watch how it works (1 min)
+                                </h4>
+                                <video
+                                    className="w-full rounded-sm border border-gray-200 aspect-video bg-black"
+                                    controls
+                                    preload="none"
+                                    playsInline
+                                    poster={TOUR_POSTER_URL}
+                                    src={TOUR_VIDEO_URL}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
             ) : activeFiltered.length === 0 ? (

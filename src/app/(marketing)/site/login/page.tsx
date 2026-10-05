@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, BookOpen } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, BookOpen, PlayCircle } from 'lucide-react';
+import { TOUR_POSTER_URL, TOUR_VIDEO_URL } from '@/lib/site';
 import { signInCustomerWithGoogle } from '@/lib/customer-oauth';
 import { supabase } from '@/lib/supabase';
 import { useSearchParams } from 'next/navigation';
@@ -40,6 +41,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const verified = searchParams.get('verified');
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [showTour, setShowTour] = useState(false);
 
   const handleGoogleSignIn = async () => {
     setError('');
@@ -209,7 +211,26 @@ function LoginForm() {
                   Register here
                 </Link>
               </p>
-              <div className="pt-3">
+              <div className="pt-3 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setShowTour((v) => !v)}
+                  className="inline-flex items-center justify-center gap-2 w-full py-3 px-4 text-sm font-semibold rounded-sm border transition-colors hover:bg-neutral-50"
+                  style={{ borderColor: 'var(--line)', color: 'var(--color-primary-ref)' }}
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  {showTour ? 'Hide tour video' : 'Watch the 1-minute tour'}
+                </button>
+                {showTour && (
+                  <video
+                    className="w-full rounded-sm border border-neutral-200 aspect-video bg-black"
+                    controls
+                    preload="none"
+                    playsInline
+                    poster={TOUR_POSTER_URL}
+                    src={TOUR_VIDEO_URL}
+                  />
+                )}
                 <a
                   href="/manual/index.html"
                   target="_blank"

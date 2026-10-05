@@ -39,6 +39,10 @@ export function marketingUrl(path: string): string {
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+/** Self-hosted tour on marketing CDN (version bump filename when re-rendering). */
+export const TOUR_VIDEO_URL = `${getMarketingUrl()}/video/omgcargo-tour-v1.mp4`;
+export const TOUR_POSTER_URL = `${getMarketingUrl()}/images/omgcargo-tour-poster.jpg`;
+
 /** Default OG / Twitter share image (use brand asset; replace with 1200x630 asset when available). */
 export const DEFAULT_OG_IMAGE_PATH = "/logo.png";
 
