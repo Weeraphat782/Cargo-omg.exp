@@ -20,6 +20,7 @@ const FALLBACK_ROWS: Omit<CarrierBoardRouteRow, 'id' | 'created_at' | 'updated_a
   { country: 'Czech', city: 'Prague', carrier_code: 'QR', sort_order: 4, is_active: true },
   { country: 'Portugal', city: 'Lisbon', carrier_code: 'QR', sort_order: 5, is_active: true },
   { country: 'New Zealand', city: 'Auckland', carrier_code: 'Qantas', sort_order: 6, is_active: true },
+  { country: 'Poland', city: 'Warsaw', carrier_code: 'QR', sort_order: 7, is_active: true },
 ];
 
 function fallbackDisplayItems(): CarrierBoardDisplayItem[] {
