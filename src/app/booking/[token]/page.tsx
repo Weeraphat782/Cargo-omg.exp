@@ -51,6 +51,9 @@ interface BookingQuotation {
   booking_details?: EmailBookingData | Record<string, unknown> | null;
   awb_number?: string | null;
   awb_number_source?: string | null;
+  docs_swapped_at?: string | null;
+  docs_swapped_with?: string | null;
+  docs_swap_checked_at?: string | null;
 }
 
 interface BookingPayload {
@@ -445,6 +448,29 @@ export default function PublicBookingPage({ params }: { params: Promise<{ token:
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-6 pb-12">
+        {q.docs_swapped_at && (
+          <div className="flex gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+            <div className="text-sm leading-relaxed">
+              <p className="font-bold">Documents swapped</p>
+              <p>
+                Document set was exchanged with{' '}
+                <strong>{q.docs_swapped_with || 'another OMG'}</strong> on{' '}
+                {new Date(q.docs_swapped_at).toLocaleString('en-GB', {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })}
+                . Please use the documents below for this booking.
+              </p>
+              <p className="mt-1 text-xs font-semibold">
+                {q.docs_swap_checked_at
+                  ? `Verified by OMG team on ${new Date(q.docs_swap_checked_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`
+                  : 'Pending verification by OMG team'}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Stat tiles */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatTile label="Net weight" value={netWeight} />

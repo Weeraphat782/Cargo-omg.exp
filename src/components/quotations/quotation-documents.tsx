@@ -10,28 +10,69 @@ import {
     normalizeCommodityType,
     type CommodityType,
 } from '@/lib/document-presets';
-import { FileText, ExternalLink, Loader2, File, CheckCircle, Trash2 } from 'lucide-react';
+import { FileText, ExternalLink, Loader2, File, CheckCircle, Trash2, AlertTriangle } from 'lucide-react';
+import { SwapDocumentsDialog, swapApiFetch } from './swap-documents-dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { InternalUploadDialog } from './internal-upload-dialog';
 import { toast } from 'sonner';
 
+export type QuotationDocsSwapInfo = {
+    docs_swapped_at?: string | null;
+    docs_swapped_with?: string | null;
+    docs_swap_checked_at?: string | null;
+};
+
 interface QuotationDocumentsProps {
     quotationId: string;
+    quotationNo?: string | null;
     requiredDocTypes?: string[] | null;
     commodityType?: CommodityType | string | null;
+    swapInfo?: QuotationDocsSwapInfo | null;
+    onUpdate?: () => void;
 }
 
 export function QuotationDocuments({
     quotationId,
+    quotationNo,
     requiredDocTypes,
     commodityType: commodityTypeProp,
+    swapInfo,
+    onUpdate,
 }: QuotationDocumentsProps) {
     const [documents, setDocuments] = useState<DocumentSubmission[]>([]);
     const [loading, setLoading] = useState(true);
     const [includeMsds, setIncludeMsds] = useState(false);
     const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+    const [markingChecked, setMarkingChecked] = useState(false);
+
+    const swapPending =
+        Boolean(swapInfo?.docs_swapped_at) && !swapInfo?.docs_swap_checked_at;
+
+    const formatSwapDate = (iso: string) =>
+        new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+    const handleMarkSwapChecked = async () => {
+        setMarkingChecked(true);
+        try {
+            const res = await swapApiFetch({
+                method: 'PATCH',
+                body: JSON.stringify({ quotationId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                toast.error(data.error || 'Could not mark as checked');
+                return;
+            }
+            toast.success('Marked as checked');
+            onUpdate?.();
+        } catch {
+            toast.error('Could not mark as checked');
+        } finally {
+            setMarkingChecked(false);
+        }
+    };
 
     const commodityType = normalizeCommodityType(commodityTypeProp ?? undefined);
 
@@ -154,6 +195,38 @@ export function QuotationDocuments({
 
     return (
         <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+            {swapPending && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex gap-2 min-w-0 flex-1">
+                        <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="text-xs text-amber-950 leading-relaxed">
+                            <p className="font-bold uppercase tracking-wide text-amber-800 mb-1">
+                                Documents swapped — please verify
+                            </p>
+                            <p>
+                                Exchanged with <strong>{swapInfo?.docs_swapped_with || 'another OMG'}</strong>
+                                {swapInfo?.docs_swapped_at ? ` on ${formatSwapDate(swapInfo.docs_swapped_at)}` : ''}.
+                                Check weight, Proforma, and run AI Review again.
+                            </p>
+                        </div>
+                    </div>
+                    <Button
+                        type="button"
+                        size="sm"
+                        className="shrink-0 bg-amber-700 hover:bg-amber-800"
+                        disabled={markingChecked}
+                        onClick={handleMarkSwapChecked}
+                    >
+                        {markingChecked ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Checked'}
+                    </Button>
+                </div>
+            )}
+            {swapInfo?.docs_swapped_at && swapInfo.docs_swap_checked_at && (
+                <p className="text-[10px] text-slate-500">
+                    Swapped with {swapInfo.docs_swapped_with || 'another OMG'} · checked{' '}
+                    {formatSwapDate(swapInfo.docs_swap_checked_at)}
+                </p>
+            )}
             <div className="bg-slate-900 text-white rounded-xl p-3 shadow-lg flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="h-8 w-8 bg-emerald-500 rounded-lg flex items-center justify-center shrink-0 shadow-inner">
@@ -175,6 +248,14 @@ export function QuotationDocuments({
                             />
                         ))}
                     </div>
+                    <SwapDocumentsDialog
+                        quotationId={quotationId}
+                        quotationNo={quotationNo}
+                        onSuccess={() => {
+                            fetchDocuments();
+                            onUpdate?.();
+                        }}
+                    />
                     <InternalUploadDialog
                         quotationId={quotationId}
                         companyName="Internal Upload"

@@ -294,7 +294,7 @@ export default function OpportunityDetailPage({ params }: { params: Promise<{ id
                                             {opportunity.quotations && opportunity.quotations.length > 1 && (
                                                 <div className="flex items-center gap-2 pb-2 border-b hidden lg:flex">
                                                     <div className="font-bold text-lg text-gray-700">Quotation #{index + 1}</div>
-                                                    <div className="text-sm text-gray-400 font-mono">{quote.id}</div>
+                                                    <div className="text-sm text-gray-400 font-mono">{quote.quotation_no || quote.id}</div>
                                                 </div>
                                             )}
 
@@ -302,8 +302,13 @@ export default function OpportunityDetailPage({ params }: { params: Promise<{ id
                                                 <CardContent className="p-4">
                                                     <div className="flex justify-between items-start mb-4">
                                                         <div>
+                                                            <div className="mb-2 inline-flex items-baseline gap-2 rounded-lg bg-slate-900 px-3 py-1.5 text-white">
+                                                                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">OMG No.</span>
+                                                                <span className="font-mono text-xl font-black tracking-wide select-all">
+                                                                    {quote.quotation_no || '—'}
+                                                                </span>
+                                                            </div>
                                                             <div className="font-semibold text-base flex items-center gap-2">
-                                                                <span className="font-mono text-gray-500 text-xs hidden lg:inline">{quote.id}</span>
                                                                 <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${quote.status === 'completed' ? 'bg-green-50 text-green-700 border-green-200' :
                                                                     quote.status === 'sent' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                                                         'bg-gray-50 text-gray-600 border-gray-200'
@@ -455,8 +460,15 @@ export default function OpportunityDetailPage({ params }: { params: Promise<{ id
                                                     {/* Attached & Missing Documents */}
                                                     <QuotationDocuments
                                                         quotationId={quote.id}
+                                                        quotationNo={quote.quotation_no}
                                                         requiredDocTypes={quote.required_doc_types}
                                                         commodityType={quote.commodity_type}
+                                                        swapInfo={{
+                                                            docs_swapped_at: quote.docs_swapped_at,
+                                                            docs_swapped_with: quote.docs_swapped_with,
+                                                            docs_swap_checked_at: quote.docs_swap_checked_at,
+                                                        }}
+                                                        onUpdate={() => fetchOpportunity()}
                                                     />
 
                                                     {/* AWB & Customs Declaration - Staff Upload */}

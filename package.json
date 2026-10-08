@@ -20,7 +20,8 @@
     "verify:booking-draft": "node scripts/verify-booking-draft.cjs",
     "verify:awb-delivered": "npx tsx scripts/verify-awb-delivered.ts",
     "verify:animation": "npx ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" src/components/social-artwork/video/animation.ts",
-    "verify:t5": "node scripts/verify-t5-highlight.cjs"
+    "verify:t5": "node scripts/verify-t5-highlight.cjs",
+    "verify:swap-documents": "node scripts/verify-swap-documents.cjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.23",

@@ -29,7 +29,10 @@ const QUOTATION_SELECT = `
   awb_number_source,
   customs_declaration_file_url,
   customs_declaration_file_name,
-  storage_provider
+  storage_provider,
+  docs_swapped_at,
+  docs_swapped_with,
+  docs_swap_checked_at
 `;
 
 function getVisionModel(): string {

@@ -438,6 +438,13 @@ export interface Quotation {
   /** MCP / Grok Bot already drafted booking email */
   booking_email_drafted_at?: string | null;
   booking_email_drafted_by?: string | null;
+
+  /** Whole document set was swapped with another OMG; staff must re-verify */
+  docs_swapped_at?: string | null;
+  docs_swapped_with?: string | null;
+  docs_swapped_by?: string | null;
+  docs_swap_checked_at?: string | null;
+  docs_swap_checked_by?: string | null;
 }
 
 export interface DocumentSubmission {
