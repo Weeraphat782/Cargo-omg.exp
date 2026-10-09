@@ -218,12 +218,6 @@ function StaffLoginForm() {
             </CardContent>
             <CardFooter className="flex flex-col space-y-2">
               <div className="text-sm text-center">
-                Don&apos;t have an account?{' '}
-                <Link href="/register" className="text-blue-600 hover:underline">
-                  Register
-                </Link>
-              </div>
-              <div className="text-sm text-center">
                 <Link href="/reset-password" className="text-slate-500 hover:text-slate-700 hover:underline">
                   Forgot your password?
                 </Link>

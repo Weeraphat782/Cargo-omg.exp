@@ -35,23 +35,20 @@ function StaffRouteGuard({ children }: { children: ReactNode }) {
 
         const role = data?.role;
 
-        if (role === ROLES.CUSTOMER) {
+        if (role === ROLES.LAB_ADMIN) {
+          if (!isLabAdminPath(pathname)) {
+            window.location.href = '/qc';
+            return;
+          }
+        } else if (role !== ROLES.STAFF && role !== ROLES.ADMIN) {
           window.location.href = '/portal';
-          return;
-        }
-
-        if (role === ROLES.LAB_ADMIN && !isLabAdminPath(pathname)) {
-          window.location.href = '/qc';
           return;
         }
 
         setAuthorized(true);
         setChecking(false);
       } catch {
-        if (!cancelled) {
-          setAuthorized(true);
-          setChecking(false);
-        }
+        if (!cancelled) window.location.href = '/login';
       }
     };
 
