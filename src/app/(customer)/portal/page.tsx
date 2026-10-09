@@ -1,15 +1,22 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Plane, Package, MapPin, CalendarDays,
     CheckCircle2, Inbox, Loader2, FileText,
-    Search, ArrowRight, Eye, Clock, PlusCircle, X,
-    ChevronDown, ChevronUp, BookOpen, FlaskConical,
+    Search, ArrowRight, Clock, PlusCircle, X,
+    ChevronDown, ChevronUp, BookOpen, FlaskConical, Share2, Check,
 } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useCustomerAuth } from '@/contexts/customer-auth-context';
-import { getCustomerQuotations, getCustomerPendingRequests, cancelCustomerQuoteRequest } from '@/lib/customer-db';
+import {
+    getCustomerQuotations,
+    getCustomerPendingRequests,
+    cancelCustomerQuoteRequest,
+    generateCustomerBookingViewToken,
+} from '@/lib/customer-db';
 import { getQuotationPayableTotalThb, type Quotation } from '@/lib/db';
 import { toast } from 'sonner';
 import { TOUR_POSTER_URL, TOUR_VIDEO_URL } from '@/lib/site';
@@ -28,18 +35,17 @@ function formatPayableThb(amount: number) {
 }
 
 function getStageDisplay(stage?: string, status?: string, deliveredAt?: string | null) {
-    if (deliveredAt || stage === 'delivered') return { label: 'Delivered', color: 'text-[#4a9c2d]', bgColor: 'bg-[#eaf6e0] border-[#4a9c2d]/20', step: 6, barColor: 'bg-[#4a9c2d]' };
-    if (status === 'completed') return { label: 'Delivered', color: 'text-[#4a9c2d]', bgColor: 'bg-[#eaf6e0] border-[#4a9c2d]/20', step: 6, barColor: 'bg-[#4a9c2d]' };
-    if (status === 'Shipped') return { label: 'Shipped', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 4, barColor: 'bg-[#184878]' };
+    if (deliveredAt || stage === 'delivered' || status === 'completed') return { label: 'Delivered', step: 6, badge: 'bg-green-50 text-green-700 border-green-200', dot: 'bg-green-500' };
+    if (status === 'Shipped') return { label: 'Shipped', step: 4, badge: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500' };
     switch (stage) {
-        case 'payment_received': return { label: 'Payment received', color: 'text-[#e0a209]', bgColor: 'bg-[#fef9e7] border-[#e0a209]/30', step: 6, barColor: 'bg-[#e0a209]' };
-        case 'picked_up': return { label: 'Picked up', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 5, barColor: 'bg-[#2c6fac]' };
-        case 'waiting_for_pickup': return { label: 'Waiting for Pick Up', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 5, barColor: 'bg-[#2c6fac]' };
-        case 'awb_received': return { label: 'AWB Received', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 4, barColor: 'bg-[#184878]' };
-        case 'booking_requested': return { label: 'Booking Requested', color: 'text-[#184878]', bgColor: 'bg-[#e6eef6] border-[#184878]/20', step: 3, barColor: 'bg-[#2c6fac]' };
-        case 'pending_booking': return { label: 'Pending Booking', color: 'text-[#5c656e]', bgColor: 'bg-[var(--paper-muted)] border-[var(--line)]', step: 2, barColor: 'bg-[#9aa2aa]' };
-        case 'pending_docs': return { label: 'Pending Documents', color: 'text-[#e0a209]', bgColor: 'bg-[#fef9e7] border-[#e0a209]/30', step: 1, barColor: 'bg-[#e0a209]' };
-        default: return { label: 'Preparing', color: 'text-[#5c656e]', bgColor: 'bg-[var(--paper-muted)] border-[var(--line)]', step: 0, barColor: 'bg-[#c4cad0]' };
+        case 'payment_received': return { label: 'Payment received', step: 6, badge: 'bg-cyan-50 text-cyan-700 border-cyan-200', dot: 'bg-cyan-500' };
+        case 'picked_up': return { label: 'Picked up', step: 5, badge: 'bg-indigo-50 text-indigo-700 border-indigo-200', dot: 'bg-indigo-500' };
+        case 'waiting_for_pickup': return { label: 'Waiting for Pick Up', step: 5, badge: 'bg-teal-50 text-teal-700 border-teal-200', dot: 'bg-teal-500' };
+        case 'awb_received': return { label: 'AWB Received', step: 4, badge: 'bg-sky-50 text-sky-700 border-sky-200', dot: 'bg-sky-500' };
+        case 'booking_requested': return { label: 'Booking Requested', step: 3, badge: 'bg-violet-50 text-violet-700 border-violet-200', dot: 'bg-violet-500' };
+        case 'pending_booking': return { label: 'Pending Booking', step: 2, badge: 'bg-orange-50 text-orange-700 border-orange-200', dot: 'bg-orange-500' };
+        case 'pending_docs': return { label: 'Pending Documents', step: 1, badge: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' };
+        default: return { label: 'Preparing', step: 0, badge: 'bg-gray-100 text-gray-600 border-gray-200', dot: 'bg-gray-400' };
     }
 }
 
@@ -52,101 +58,151 @@ function isPricingPending(q: Quotation): boolean {
     return !q.destination_id || !q.total_cost || Number(q.total_cost) <= 0;
 }
 
-// ============ MINI PROGRESS BAR ============
+// ============ SHIPMENT TABLE ============
 
-function MiniProgress({ step }: { step: number }) {
+function ShipmentRow({ q }: { q: Quotation }) {
+    const router = useRouter();
+    const sc = getStageDisplay(q.opportunities?.stage, q.status, q.delivered_at);
+    const pricingPending = isPricingPending(q);
+    const [copying, setCopying] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const [viewToken, setViewToken] = useState(q.booking_view_token ?? null);
+
+    const handleCopyBookingSheet = async (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setCopying(true);
+        try {
+            const token = viewToken || (await generateCustomerBookingViewToken(q.id));
+            if (!token) {
+                toast.error('Could not copy booking sheet link');
+                return;
+            }
+            setViewToken(token);
+            await navigator.clipboard.writeText(`${window.location.origin}/booking/view/${token}`);
+            setCopied(true);
+            toast.success('Booking sheet link copied');
+            setTimeout(() => setCopied(false), 3000);
+        } catch {
+            toast.error('Could not copy link');
+        } finally {
+            setCopying(false);
+        }
+    };
+
     return (
-        <div className="flex items-center gap-1 w-full max-w-[168px]">
-            {[1, 2, 3, 4, 5, 6].map((s) => (
-                <div
-                    key={s}
-                    className={`h-1.5 flex-1 rounded-full transition-all ${s <= step
-                        ? step >= 6 ? 'bg-[#4a9c2d]' : 'bg-[#184878]'
-                        : 'bg-[var(--line)]'
+        <TableRow
+            className="cursor-pointer hover:bg-gray-50/80"
+            onClick={() => router.push(`/portal/shipments/${q.id}`)}
+        >
+            <TableCell className="min-w-[88px] text-xs sm:text-sm font-bold font-mono">
+                {q.quotation_no || q.id.slice(0, 8)}
+            </TableCell>
+            <TableCell className="min-w-[140px]">
+                <span
+                    className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${sc.badge}`}
+                >
+                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${sc.dot}`} />
+                    {sc.label}
+                </span>
+            </TableCell>
+            <TableCell
+                className="min-w-[120px] max-w-[220px] truncate text-xs sm:text-sm font-semibold text-[var(--navy-700)]"
+                title={pricingPending ? undefined : q.destination || undefined}
+            >
+                {pricingPending ? 'Destination TBD' : q.destination || 'N/A'}
+            </TableCell>
+            <TableCell className="min-w-[56px] text-xs sm:text-sm tabular-nums">
+                {q.pallets?.length || 0}
+            </TableCell>
+            <TableCell className="min-w-[90px] text-xs sm:text-sm whitespace-nowrap">
+                {formatDate(q.created_at)}
+            </TableCell>
+            <TableCell className="min-w-[90px] text-xs sm:text-sm whitespace-nowrap text-gray-500">
+                {formatDate(q.updated_at || q.created_at)}
+            </TableCell>
+            <TableCell className="min-w-[120px] text-xs sm:text-sm">
+                {pricingPending ? (
+                    <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                            Awaiting Pricing
+                        </div>
+                        <div className="text-[11px] text-slate-500">Staff will set rate soon</div>
+                    </div>
+                ) : (
+                    <div>
+                        <div
+                            className={`text-[10px] font-bold uppercase tracking-widest ${q.price_confirmed ? 'text-emerald-500' : 'text-amber-500'}`}
+                        >
+                            {q.price_confirmed ? 'Confirmed' : 'Pending'}
+                        </div>
+                        <div
+                            className={`text-sm font-black tabular-nums ${q.price_confirmed ? 'text-emerald-700' : 'text-amber-700'}`}
+                        >
+                            {formatPayableThb(getQuotationPayableTotalThb(q))}
+                        </div>
+                    </div>
+                )}
+            </TableCell>
+            <TableCell className="min-w-[200px] text-right">
+                <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                    <button
+                        type="button"
+                        onClick={(e) => void handleCopyBookingSheet(e)}
+                        disabled={copying}
+                        title="Copy booking sheet link to share with your consignee (no prices)"
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[11px] font-bold border transition-colors disabled:opacity-60 ${
+                            copied
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-white text-[#215497] border-[#215497]/30 hover:bg-blue-50'
                         }`}
-                />
-            ))}
-        </div>
+                    >
+                        {copying ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : copied ? (
+                            <Check className="w-3 h-3" />
+                        ) : (
+                            <Share2 className="w-3 h-3" />
+                        )}
+                        {copied ? 'Copied!' : 'Copy sheet'}
+                    </button>
+                    <Link
+                        href={`/portal/shipments/${q.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-[11px] font-bold text-emerald-700 border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50"
+                    >
+                        View
+                        <ArrowRight className="w-3 h-3" />
+                    </Link>
+                </div>
+            </TableCell>
+        </TableRow>
     );
 }
 
-// ============ SHIPMENT LIST CARD ============
-
-function ShipmentListCard({ q }: { q: Quotation }) {
-    const sc = getStageDisplay(q.opportunities?.stage, q.status, q.delivered_at);
-    const pricingPending = isPricingPending(q);
-
+function ShipmentTable({ items }: { items: Quotation[] }) {
     return (
-        <Link
-            href={`/portal/shipments/${q.id}`}
-            className="block bg-white rounded-sm border border-gray-100 overflow-hidden hover:shadow-lg hover:border-emerald-200 transition-all group"
-        >
-            <div className="p-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    {/* Left: Icon + Info */}
-                    <div className="flex items-start gap-4">
-                        <div className={`w-12 h-12 rounded-sm flex items-center justify-center shrink-0 transition-colors ${sc.step >= 6 ? 'bg-emerald-50 text-emerald-600' : sc.step === 5 ? 'bg-teal-50 text-teal-600' : sc.step >= 4 ? 'bg-[var(--info-bg)] text-[var(--navy-700)]' : 'bg-amber-50 text-amber-600'
-                            }`}>
-                            <Plane className={`w-6 h-6 ${sc.step >= 4 ? 'animate-bounce' : ''}`} />
-                        </div>
-                        <div className="space-y-1.5 min-w-0">
-                            <div className="flex items-center gap-2.5 flex-wrap">
-                                <span className="text-base font-bold text-gray-900">{q.quotation_no || q.id.slice(0, 8)}</span>
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${sc.bgColor} ${sc.color}`}>
-                                    {(sc.step === 4 || sc.step === 5) && <span className={`w-1.5 h-1.5 rounded-full mr-1.5 animate-pulse ${sc.step === 5 ? 'bg-teal-500' : 'bg-[var(--navy-700)]'}`} />}
-                                    {sc.label}
-                                </span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
-                                <span className="flex items-center gap-1 text-[var(--navy-700)] font-semibold">
-                                    <MapPin className="w-3.5 h-3.5" /> {pricingPending ? 'Destination TBD' : (q.destination || 'N/A')}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                    <Package className="w-3.5 h-3.5 text-gray-400" /> {q.pallets?.length || 0} pallets
-                                </span>
-                                <span className="flex items-center gap-1">
-                                    <CalendarDays className="w-3.5 h-3.5 text-gray-400" /> {formatDate(q.created_at)}
-                                </span>
-                            </div>
-                            {/* Mini progress */}
-                            <div className="pt-1">
-                                <MiniProgress step={sc.step} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Right: Amount + Arrow */}
-                    <div className="flex items-center gap-4 sm:gap-6 shrink-0 self-end sm:self-center">
-                        {pricingPending ? (
-                            <div className="text-right px-3 py-2 rounded-lg border-2 border-slate-200 bg-slate-50">
-                                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Awaiting Pricing</div>
-                                <div className="text-xs text-slate-500 mt-0.5">Staff will set rate soon</div>
-                            </div>
-                        ) : (
-                            <div className={`text-right px-3 py-2 rounded-lg border-2 ${q.price_confirmed ? 'border-emerald-300 bg-emerald-50/50' : 'border-amber-400 bg-amber-50/50'}`}>
-                                <div className={`text-[10px] font-bold uppercase tracking-widest ${q.price_confirmed ? 'text-emerald-500' : 'text-amber-500'}`}>
-                                    {q.price_confirmed ? 'Confirmed' : 'Pending'}
-                                </div>
-                                <div className={`text-lg font-black ${q.price_confirmed ? 'text-emerald-700' : 'text-amber-700'}`}>{formatPayableThb(getQuotationPayableTotalThb(q))}</div>
-                            </div>
-                        )}
-                        <div className="w-9 h-9 rounded-sm bg-gray-50 flex items-center justify-center group-hover:bg-emerald-100 group-hover:text-emerald-600 text-gray-400 transition-all">
-                            <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Footer */}
-            <div className="bg-gray-50/50 border-t border-gray-50 px-5 py-2 flex items-center justify-between">
-                <span className="text-[10px] text-gray-400 font-medium">
-                    Updated: {formatDate(q.updated_at || q.created_at)}
-                </span>
-                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Eye className="w-3 h-3" /> View Details
-                </span>
-            </div>
-        </Link>
+        <div className="overflow-x-auto bg-white rounded-sm border border-gray-100">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="min-w-[88px] text-xs sm:text-sm">OMG No.</TableHead>
+                        <TableHead className="min-w-[140px] text-xs sm:text-sm">Status</TableHead>
+                        <TableHead className="min-w-[120px] text-xs sm:text-sm">Destination</TableHead>
+                        <TableHead className="min-w-[56px] text-xs sm:text-sm">Pallets</TableHead>
+                        <TableHead className="min-w-[90px] text-xs sm:text-sm">Created</TableHead>
+                        <TableHead className="min-w-[90px] text-xs sm:text-sm">Updated</TableHead>
+                        <TableHead className="min-w-[120px] text-xs sm:text-sm">Total (incl. VAT)</TableHead>
+                        <TableHead className="min-w-[200px] text-right text-xs sm:text-sm">Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {items.map((q) => (
+                        <ShipmentRow key={q.id} q={q} />
+                    ))}
+                </TableBody>
+            </Table>
+        </div>
     );
 }
 
@@ -482,9 +538,7 @@ export default function MyShipmentsPage() {
                 </div>
             ) : (
                 <div className="space-y-3">
-                    {activeFiltered.map((q) => (
-                        <ShipmentListCard key={q.id} q={q} />
-                    ))}
+                    <ShipmentTable items={activeFiltered} />
                     <div className="text-center pt-2">
                         <span className="text-xs text-gray-400">
                             Showing {activeFiltered.length} active shipment{activeFiltered.length === 1 ? '' : 's'}
@@ -522,10 +576,8 @@ export default function MyShipmentsPage() {
                         )}
                     </button>
                     {showCompleted && (
-                        <div className="border-t border-gray-100 p-3 space-y-3 bg-gray-50/40">
-                            {completedFiltered.map((q) => (
-                                <ShipmentListCard key={q.id} q={q} />
-                            ))}
+                        <div className="border-t border-gray-100 p-3 bg-gray-50/40">
+                            <ShipmentTable items={completedFiltered} />
                         </div>
                     )}
                 </div>

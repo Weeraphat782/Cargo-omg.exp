@@ -8,7 +8,7 @@ import {
     CheckCircle2, Loader2, FileText, Download,
     Save, Trash2, Plus, Info, XCircle, Clock,
     Image as ImageIcon, FileSpreadsheet, Upload,
-    ChevronUp, ChevronDown, Eye, Calculator, Share2, Check
+    ChevronUp, ChevronDown, Eye, Calculator, Share2, Check, ExternalLink
 } from 'lucide-react';
 import { useCustomerAuth } from '@/contexts/customer-auth-context';
 import {
@@ -18,6 +18,7 @@ import {
     submitCustomerDocument,
     getFreightRatesByDestination,
     generateCustomerShareToken,
+    generateCustomerBookingViewToken,
     getCompanyDocuments,
 } from '@/lib/customer-db';
 import { calculateVolumeWeight } from '@/lib/calculators';
@@ -388,6 +389,8 @@ export default function ShipmentDetailPage() {
     // Share link state
     const [sharing, setSharing] = useState(false);
     const [shareCopied, setShareCopied] = useState(false);
+    const [bookingSheetBusy, setBookingSheetBusy] = useState(false);
+    const [bookingSheetCopied, setBookingSheetCopied] = useState(false);
 
     // Documents & Upload sections collapsed
     const [docsOpen, setDocsOpen] = useState(false);
@@ -737,6 +740,53 @@ export default function ShipmentDetailPage() {
         }
     };
 
+    const getBookingViewUrl = async (): Promise<string | null> => {
+        if (!quotation) return null;
+        const token =
+            quotation.booking_view_token ||
+            (await generateCustomerBookingViewToken(quotation.id));
+        if (!token) return null;
+        if (!quotation.booking_view_token) {
+            setQuotation({ ...quotation, booking_view_token: token });
+        }
+        return `${window.location.origin}/booking/view/${token}`;
+    };
+
+    const handleBookingSheetOpen = async () => {
+        setBookingSheetBusy(true);
+        try {
+            const url = await getBookingViewUrl();
+            if (url) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            } else {
+                toast.error('Could not open booking sheet');
+            }
+        } catch {
+            toast.error('Could not open booking sheet');
+        } finally {
+            setBookingSheetBusy(false);
+        }
+    };
+
+    const handleBookingSheetCopy = async () => {
+        setBookingSheetBusy(true);
+        try {
+            const url = await getBookingViewUrl();
+            if (url) {
+                await navigator.clipboard.writeText(url);
+                setBookingSheetCopied(true);
+                toast.success('Booking sheet link copied');
+                setTimeout(() => setBookingSheetCopied(false), 3000);
+            } else {
+                toast.error('Could not copy booking sheet link');
+            }
+        } catch {
+            toast.error('Could not copy link');
+        } finally {
+            setBookingSheetBusy(false);
+        }
+    };
+
     const commodity = useMemo(
         () => normalizeCommodityType(quotation?.commodity_type),
         [quotation?.commodity_type]
@@ -859,6 +909,55 @@ export default function ShipmentDetailPage() {
                     <TrackingProgress sc={sc} />
                 </div>
             </div>
+
+            {q.status !== 'pending_approval' && (
+                <div className="bg-white rounded-sm border border-[#215497]/25 p-5 md:p-6 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-[#215497]" />
+                                Booking sheet
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-1 max-w-xl leading-relaxed">
+                                Share this sheet with your consignee or overseas partner — documents and shipment
+                                details only, no prices shown.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => void handleBookingSheetOpen()}
+                                disabled={bookingSheetBusy}
+                                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-sm text-xs font-bold bg-[#215497] text-white hover:bg-[#1a4378] transition-colors disabled:opacity-60"
+                            >
+                                {bookingSheetBusy ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <ExternalLink className="w-4 h-4" />
+                                )}
+                                Open
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleBookingSheetCopy()}
+                                disabled={bookingSheetBusy}
+                                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-sm text-xs font-bold border transition-all ${
+                                    bookingSheetCopied
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                                }`}
+                            >
+                                {bookingSheetCopied ? (
+                                    <Check className="w-4 h-4" />
+                                ) : (
+                                    <Share2 className="w-4 h-4" />
+                                )}
+                                {bookingSheetCopied ? 'Copied!' : 'Copy link'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ===== SHIPPING INFO + WEIGHT ===== */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

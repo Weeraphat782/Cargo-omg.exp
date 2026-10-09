@@ -429,6 +429,8 @@ export interface Quotation {
 
   /** Public Air Freight booking link token (separate from share_token) */
   booking_share_token?: string | null;
+  /** Read-only booking sheet link for customer / consignee (no AWB upload) */
+  booking_view_token?: string | null;
   /** Staff-entered booking request fields (airline, routing, etc.) */
   booking_details?: import('./email-templates').EmailBookingData | Record<string, unknown> | null;
   /** Air Freight team response from public booking page */
