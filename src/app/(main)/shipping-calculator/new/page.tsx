@@ -61,6 +61,31 @@ const palletSchema = z.object({
     overriddenRate: z.number().min(0).optional(),
 });
 
+const INSPECTION_FEE = 'Inspection Fee';
+const DEFAULT_ADDITIONAL_CHARGES = [
+    INSPECTION_FEE,
+    'Phytosanitary Certificate Processing Service',
+    '4-Wheel Truck',
+    '6-Wheel Truck',
+    'Packing w/ Thermal Blanket (Per Pallet)',
+    'Insurance',
+    'Broker Registration Fee (one-time)',
+    'E-Custom (Paperless) Registration (one-time)',
+    'Renewal Fee (one-time)',
+].map((name) => ({ name, description: '', amount: 0 }));
+
+function defaultAdditionalTaxableFlags() {
+    return DEFAULT_ADDITIONAL_CHARGES.map(() => true);
+}
+
+function dropZeroCharges<T extends { amount?: number }>(charges: T[], taxable: boolean[] = []) {
+    const keep = charges.map((c) => (Number(c.amount) || 0) > 0);
+    return {
+        charges: charges.filter((_, i) => keep[i]),
+        taxable: taxable.filter((_, i) => keep[i]),
+    };
+}
+
 // --- Additional Charge Schema ---
 const additionalChargeSchema = z.object({
     name: z.string(),
@@ -69,16 +94,14 @@ const additionalChargeSchema = z.object({
     productId: z.string().optional(), // Track which product this charge belongs to
 }).refine(
     (data) => {
-        // If any field is filled, all fields must be filled
-        const hasAnyValue = data.name !== '' || data.description !== '' || data.amount > 0;
-        if (hasAnyValue) {
-            return data.name !== '' && data.description !== '';
+        if ((Number(data.amount) || 0) > 0) {
+            return (data.name ?? '').trim() !== '';
         }
-        return true; // Allow all empty
+        return true;
     },
     {
-        message: 'If adding a charge, both name and description are required',
-        path: ['name'], // Show error on name field
+        message: 'Name is required when amount is greater than 0',
+        path: ['name'],
     }
 );
 
@@ -472,6 +495,8 @@ const AdditionalChargeItem = ({
     removeChargeRow: (index: number) => void;
 }) => {
     const { control } = useFormContext<QuotationFormValues>();
+    const chargeName = useWatch({ control, name: `additionalCharges.${index}.name` });
+    const isInspectionFee = chargeName === INSPECTION_FEE;
 
     return (
         <div className="flex flex-row items-center gap-2 mb-2">
@@ -482,7 +507,12 @@ const AdditionalChargeItem = ({
                     <FormItem className="flex-[2] min-w-0 mb-0">
                         <FormLabel className="sr-only">Name</FormLabel>
                         <FormControl>
-                            <Input {...field} placeholder="Name" className="h-9" />
+                            <Input
+                                {...field}
+                                readOnly={isInspectionFee}
+                                placeholder="Name"
+                                className={`h-9 ${isInspectionFee ? 'bg-muted cursor-default' : ''}`}
+                            />
                         </FormControl>
                     </FormItem>
                 )}
@@ -540,15 +570,19 @@ const AdditionalChargeItem = ({
                     </FormItem>
                 )}
             />
-            <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => removeChargeRow(index)}
-                className="text-red-600 hover:bg-red-100 h-9 w-9 shrink-0"
-            >
-                <Minus className="h-4 w-4" />
-            </Button>
+            {!isInspectionFee ? (
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeChargeRow(index)}
+                    className="text-red-600 hover:bg-red-100 h-9 w-9 shrink-0"
+                >
+                    <Minus className="h-4 w-4" />
+                </Button>
+            ) : (
+                <div className="h-9 w-9 shrink-0" aria-hidden />
+            )}
         </div>
     );
 };
@@ -753,7 +787,7 @@ function ShippingCalculatorPageContent() {
             deliveryServiceRequired: false,
             deliveryVehicleType: paramVehicleType as '4wheel' | '6wheel' | undefined, // Don't set default - let user choose if needed
             clearanceCost: 0, // Default to 0, user can add via button
-            additionalCharges: [{ name: '', description: '', amount: 0 }],
+            additionalCharges: DEFAULT_ADDITIONAL_CHARGES.map((c) => ({ ...c })),
             notes: paramNotes || '',
             opportunityId: paramOpportunityId || '',
             productId: paramProductId || '',
@@ -761,7 +795,7 @@ function ShippingCalculatorPageContent() {
                 freight: false,
                 clearance: true,
                 delivery: true,
-                additional: [true],
+                additional: defaultAdditionalTaxableFlags(),
             },
             whtEnabled: true,
         },
@@ -879,6 +913,33 @@ function ShippingCalculatorPageContent() {
         [removeCharge, getValues, setValue]
     );
 
+    const addDefaultChargeRows = React.useCallback(() => {
+        const current = getValues('additionalCharges') ?? [];
+        const existingNames = new Set(current.map((c) => (c.name ?? '').trim()));
+        const toAdd = DEFAULT_ADDITIONAL_CHARGES.filter((d) => !existingNames.has(d.name));
+        if (toAdd.length === 0) {
+            toast.info('Default charge rows are already on this quotation');
+            return;
+        }
+        const t = getValues('taxableLines');
+        setValue(
+            'additionalCharges',
+            [...current, ...toAdd.map((c) => ({ ...c }))],
+            { shouldDirty: true, shouldValidate: true }
+        );
+        setValue(
+            'taxableLines',
+            {
+                freight: t?.freight ?? true,
+                clearance: t?.clearance ?? true,
+                delivery: t?.delivery ?? true,
+                additional: [...(t?.additional ?? []), ...toAdd.map(() => true)],
+            },
+            { shouldDirty: true }
+        );
+        toast.success(`Added ${toAdd.length} default charge row${toAdd.length === 1 ? '' : 's'}`);
+    }, [getValues, setValue]);
+
     // Watch relevant fields for recalculation
     const watchedDestinationId = watch('destinationId');
     const watchedDeliveryRequired = watch('deliveryServiceRequired');
@@ -974,15 +1035,19 @@ function ShippingCalculatorPageContent() {
             additional: [],
         }) as QuotationTaxableLinesForm;
         const ac = watchedAdditionalCharges ?? [];
-        const taxable_map = buildQuotationTaxableLinesFromForm(tlForm, ac);
-        const filtered = ac.filter(
-            (c) => (c.name ?? '').trim() !== '' || (c.description ?? '').trim() !== '' || (Number(c.amount) || 0) > 0
+        const paddedAdditional = [...(tlForm.additional ?? [])];
+        while (paddedAdditional.length < ac.length) paddedAdditional.push(true);
+        const { charges: acForVat, taxable: additionalTaxable } = dropZeroCharges(
+            ac,
+            paddedAdditional.slice(0, ac.length)
         );
+        const tlForVat = { ...tlForm, additional: additionalTaxable };
+        const taxable_map = buildQuotationTaxableLinesFromForm(tlForVat, acForVat);
         return computeQuotationVatBreakdown({
             total_freight_cost: calculationResult.totalFreightCost,
             clearance_cost: Number(watchedClearanceCost) || 0,
             delivery_amount: watchedDeliveryRequired ? calculationResult.deliveryCost : 0,
-            additional_amounts: filtered.map((c) => Number(c.amount) || 0),
+            additional_amounts: acForVat.map((c) => Number(c.amount) || 0),
             taxable_lines: taxable_map,
             wht_enabled: watchedWhtEnabled !== false,
         });
@@ -1003,11 +1068,18 @@ function ShippingCalculatorPageContent() {
             delivery: true,
             additional: [],
         }) as QuotationTaxableLinesForm;
+        const acDisplay = watchedAdditionalCharges ?? [];
+        const paddedAdditional = [...(tl.additional ?? [])];
+        while (paddedAdditional.length < acDisplay.length) paddedAdditional.push(true);
+        const { charges: acForDisplay, taxable: additionalTaxable } = dropZeroCharges(
+            acDisplay,
+            paddedAdditional.slice(0, acDisplay.length)
+        );
         return getQuotationVatDisplayRows(calculationResult, {
             clearanceCost: Number(watchedClearanceCost) || 0,
             deliveryServiceRequired: watchedDeliveryRequired,
-            additionalCharges: watchedAdditionalCharges ?? [],
-            taxableLines: tl,
+            additionalCharges: acForDisplay,
+            taxableLines: { ...tl, additional: additionalTaxable },
         });
     }, [
         calculationResult,
@@ -1410,14 +1482,17 @@ function ShippingCalculatorPageContent() {
                         // Set existing quotation so it updates (not creates new)
                         setExistingQuotation(typedQ);
 
-                        const approveAdditionalCharges = Array.isArray(typedQ.additional_charges) && typedQ.additional_charges.length > 0
-                            ? typedQ.additional_charges.map(c => ({
+                        const approveUseDefaultCharges = !(
+                            Array.isArray(typedQ.additional_charges) && typedQ.additional_charges.length > 0
+                        );
+                        const approveAdditionalCharges = approveUseDefaultCharges
+                            ? DEFAULT_ADDITIONAL_CHARGES.map((c) => ({ ...c }))
+                            : typedQ.additional_charges!.map((c) => ({
                                 name: c.name || '',
                                 description: c.description || '',
                                 amount: Number(c.amount) || 0,
-                                productId: (c as { productId?: string }).productId || undefined
-                            }))
-                            : [{ name: '', description: '', amount: 0 }];
+                                productId: (c as { productId?: string }).productId || undefined,
+                            }));
 
                         reset({
                             commodityType: normalizeCommodityType(typedQ.commodity_type),
@@ -1441,10 +1516,17 @@ function ShippingCalculatorPageContent() {
                             deliveryVehicleType: typedQ.delivery_vehicle_type as '4wheel' | '6wheel' | undefined,
                             clearanceCost: Number(typedQ.clearance_cost) || 0,
                             additionalCharges: approveAdditionalCharges,
-                            taxableLines: parseQuotationTaxableLinesToForm(
-                                typedQ.taxable_lines,
-                                approveAdditionalCharges.length
-                            ),
+                            taxableLines: approveUseDefaultCharges
+                                ? {
+                                    freight: false,
+                                    clearance: true,
+                                    delivery: true,
+                                    additional: defaultAdditionalTaxableFlags(),
+                                }
+                                : parseQuotationTaxableLinesToForm(
+                                    typedQ.taxable_lines,
+                                    approveAdditionalCharges.length
+                                ),
                             notes: typedQ.notes || '',
                             opportunityId: typedQ.opportunity_id || '',
                         });
@@ -1488,14 +1570,14 @@ function ShippingCalculatorPageContent() {
                         deliveryServiceRequired: false,
                         deliveryVehicleType: paramVehicleType as '4wheel' | '6wheel' | undefined,
                         clearanceCost: 0, // Default to 0, user can add via button
-                        additionalCharges: [{ name: '', description: '', amount: 0 }],
+                        additionalCharges: DEFAULT_ADDITIONAL_CHARGES.map((c) => ({ ...c })),
                         notes: paramNotes || '',
                         opportunityId: paramOpportunityId || '',
                         taxableLines: {
                             freight: false,
                             clearance: true,
                             delivery: true,
-                            additional: [true],
+                            additional: defaultAdditionalTaxableFlags(),
                         },
                     });
                 }
@@ -1619,11 +1701,6 @@ function ShippingCalculatorPageContent() {
             quantity: 1, // Already 1 from explosion, but explicit is better
             overridden_rate: p.overriddenRate
         }));
-        // Filter out empty additional charges (where name and description are empty)
-        const convertedAdditionalCharges = formData.additionalCharges.filter(
-            charge => charge.name !== '' || charge.description !== '' || charge.amount > 0
-        );
-
         const tlForm = (formData.taxableLines ?? {
             freight: false,
             clearance: true,
@@ -1633,13 +1710,18 @@ function ShippingCalculatorPageContent() {
         const acForm = formData.additionalCharges ?? [];
         const paddedAdditional = [...(tlForm.additional ?? [])];
         while (paddedAdditional.length < acForm.length) paddedAdditional.push(true);
-        const tlSafe: QuotationTaxableLinesForm = {
+        const tlPadded: QuotationTaxableLinesForm = {
             freight: tlForm.freight !== false,
             clearance: tlForm.clearance !== false,
             delivery: tlForm.delivery !== false,
             additional: paddedAdditional.slice(0, acForm.length),
         };
-        const taxable_lines = buildQuotationTaxableLinesFromForm(tlSafe, acForm);
+        const { charges: convertedAdditionalCharges, taxable: additionalTaxable } = dropZeroCharges(
+            acForm,
+            tlPadded.additional ?? []
+        );
+        const tlSafe: QuotationTaxableLinesForm = { ...tlPadded, additional: additionalTaxable };
+        const taxable_lines = buildQuotationTaxableLinesFromForm(tlSafe, convertedAdditionalCharges);
         const additional_amounts = convertedAdditionalCharges.map((c) => Number(c.amount) || 0);
         const vatComputed = computeQuotationVatBreakdown({
             total_freight_cost: calcResult.totalFreightCost,
@@ -2518,7 +2600,18 @@ function ShippingCalculatorPageContent() {
                                 </div>
 
                                 <div className="space-y-2 pt-4">
-                                    <h3 className="font-medium mb-1">Additional Charges</h3>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <h3 className="font-medium mb-1">Additional Charges</h3>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={addDefaultChargeRows}
+                                            className="text-xs shrink-0"
+                                        >
+                                            Add by default
+                                        </Button>
+                                    </div>
                                     {chargeFields.map((field, index) => (
                                         <AdditionalChargeItem key={field.id} index={index} removeChargeRow={removeChargeRow} />
                                     ))}
