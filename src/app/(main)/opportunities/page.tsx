@@ -133,7 +133,7 @@ export default function OpportunitiesPage() {
       .select(`
         *,
         quotations(
-          id, price_confirmed, total_cost, vat_amount, wht_amount, wht_enabled, quotation_no,
+          id, company_id, price_confirmed, total_cost, vat_amount, wht_amount, wht_enabled, quotation_no,
           customer_user_id, phyto_required, notes, commodity_type, status, consignee_name,
           awb_number, awb_file_url, booking_share_token, tracking_status, delivered_at,
           document_submissions(count)
@@ -180,6 +180,7 @@ export default function OpportunitiesPage() {
         product_id?: string | null;
         quotations?: {
           id: string;
+          company_id?: string | null;
           price_confirmed?: boolean;
           total_cost?: number;
           vat_amount?: number | null;
@@ -247,7 +248,8 @@ export default function OpportunitiesPage() {
           topic: item.topic,
           customerName: item.customer_name || 'Unknown',
           companyName: item.customer_name || 'Unknown',
-          companyId: item.company_id || undefined,
+          // Some op cards were created without company_id; their linked quotation still has it.
+          companyId: item.company_id || item.quotations?.find(q => q.company_id)?.company_id || undefined,
           amount: item.amount,
           currency: item.currency,
           stage: item.stage,
