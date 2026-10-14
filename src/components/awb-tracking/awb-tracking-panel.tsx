@@ -26,6 +26,7 @@ type TrackingPayload = {
     send_trigger: string;
     status: string;
     recipients: string[];
+    cc?: string[] | null;
     sent_at: string | null;
     resend_message_id: string | null;
     created_at: string;
@@ -251,7 +252,8 @@ export function AwbTrackingPanel({
             <ul className="border rounded-md divide-y text-xs">
               {data.notifications.map((n, i) => (
                 <li key={i} className="px-2 py-1.5">
-                  {n.send_trigger} · {n.status} · {n.recipients.join(', ') || '—'}
+                  {n.send_trigger} · {n.status} · To: {n.recipients.join(', ') || '—'}
+                  {n.cc && n.cc.length > 0 ? ` · CC: ${n.cc.join(', ')}` : ''}
                   {n.sent_at && ` · ${new Date(n.sent_at).toLocaleString('en-GB')}`}
                 </li>
               ))}

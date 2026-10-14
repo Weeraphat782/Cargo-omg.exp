@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   applyTrackingUpdate,
   carrierFromAwb,
+  DELIVERED_CC,
   NO_DELIVERED_RECIPIENTS_MSG,
   normalizeAwb,
   nextStageAfterDelivery,
@@ -28,17 +29,26 @@ assert.equal(carrierFromAwb('02010648864'), 'LH');
 assert.equal(carrierFromAwb('17610648864'), 'EK');
 assert.equal(carrierFromAwb('88810648864'), null);
 
-const recipients = resolveDeliveredRecipients({
+const emptyNotify = resolveDeliveredRecipients({
   notifyEmails: [],
   requesterEmail: 'User@Example.com',
 });
-assert.deepEqual(recipients, ['user@example.com']);
+assert.deepEqual(emptyNotify.to, ['user@example.com']);
+assert.deepEqual(emptyNotify.cc, [...DELIVERED_CC]);
 
-const recipients2 = resolveDeliveredRecipients({
+const notifyWithoutRequester = resolveDeliveredRecipients({
   notifyEmails: ['a@b.com', 'A@B.com'],
   requesterEmail: 'c@d.com',
 });
-assert.equal(recipients2.length, 2);
+assert.deepEqual(notifyWithoutRequester.to, ['a@b.com']);
+assert.deepEqual(notifyWithoutRequester.cc, [...DELIVERED_CC, 'c@d.com']);
+
+const cargoInNotify = resolveDeliveredRecipients({
+  notifyEmails: ['Cargo@OMGexp.com'],
+  requesterEmail: 'c@d.com',
+});
+assert.deepEqual(cargoInNotify.to, ['cargo@omgexp.com']);
+assert.deepEqual(cargoInNotify.cc, ['shivek@omgexp.com', 'c@d.com']);
 
 assert.equal(nextStageAfterDelivery('payment_received'), 'payment_received');
 assert.equal(nextStageAfterDelivery('picked_up'), 'delivered');
@@ -122,7 +132,9 @@ async function runIdempotencyCheck() {
   let sendCount = 0;
   let historyCount = 0;
   let autoLogClaimed = false;
-  let loggedRecipients: string[] = [];
+  let loggedTo: string[] = [];
+  let loggedCc: string[] = [];
+  let sendCc: string[] = [];
 
   const q = makeQuotation();
 
@@ -144,14 +156,15 @@ async function runIdempotencyCheck() {
       stage = s;
     },
     resolveRequesterEmail: async () => 'user@example.com',
-    tryClaimAutoEmail: async (_id, rec, bcc) => {
-      loggedRecipients = rec;
-      assert.deepEqual(bcc, []);
+    tryClaimAutoEmail: async (_id, to, cc) => {
+      loggedTo = to;
+      loggedCc = cc;
       if (autoLogClaimed) return 'already';
       autoLogClaimed = true;
       return 'claimed';
     },
-    sendDelivered: async () => {
+    sendDelivered: async (opts) => {
+      sendCc = opts.cc;
       sendCount++;
       return { ok: true, messageId: 'msg_1' };
     },
@@ -173,9 +186,9 @@ async function runIdempotencyCheck() {
   assert.equal(sendCount, 1);
   assert.equal(historyCount, 1);
   assert.equal(stage, 'delivered');
-  assert.equal(loggedRecipients.length, 2);
-  assert.ok(loggedRecipients.includes('notify@example.com'));
-  assert.ok(loggedRecipients.includes('user@example.com'));
+  assert.deepEqual(loggedTo, ['notify@example.com']);
+  assert.deepEqual(loggedCc, [...DELIVERED_CC, 'user@example.com']);
+  assert.deepEqual(sendCc, loggedCc);
 
   const r2 = await applyTrackingUpdate(deps, input);
   assert.equal(r2.already_delivered, true);
@@ -267,7 +280,8 @@ async function runEmptyRecipientsAuto() {
 }
 
 async function runResendManualLogRecipients() {
-  let logged: string[] = [];
+  let loggedTo: string[] = [];
+  let loggedCc: string[] = [];
   const q = makeQuotation({ delivered_at: '2026-01-01T00:00:00Z' });
   const deps: TrackingDeps = {
     findQuotationByAwb: async () => q,
@@ -282,15 +296,16 @@ async function runResendManualLogRecipients() {
     tryClaimAutoEmail: async () => 'already',
     sendDelivered: async () => ({ ok: true, messageId: 'm1' }),
     finalizeAutoLog: async () => {},
-    insertManualLog: async (_id, rec) => {
-      logged = rec;
+    insertManualLog: async (_id, to, cc) => {
+      loggedTo = to;
+      loggedCc = cc;
       return 'log2';
     },
     updateManualLog: async () => {},
   };
-  await resendDeliveredEmail(deps, q, 'https://x', q.delivered_at!, ['cargo@omgexp.com']);
-  assert.ok(logged.length >= 2);
-  assert.ok(logged.includes('notify@example.com'));
+  await resendDeliveredEmail(deps, q, 'https://x', q.delivered_at!);
+  assert.deepEqual(loggedTo, ['notify@example.com']);
+  assert.deepEqual(loggedCc, [...DELIVERED_CC, 'user@example.com']);
 }
 
 async function runRouteCorrectionOnDelivered() {
@@ -358,7 +373,7 @@ async function runResendEmptyThrows() {
     updateManualLog: async () => {},
   };
   await assert.rejects(
-    () => resendDeliveredEmail(deps, q, '', q.delivered_at!, []),
+    () => resendDeliveredEmail(deps, q, '', q.delivered_at!),
     (err: Error) => err.message === NO_DELIVERED_RECIPIENTS_MSG
   );
 }

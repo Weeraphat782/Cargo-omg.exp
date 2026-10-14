@@ -88,25 +88,45 @@ export function normalizeIata(code?: string): string | undefined {
 export const NO_DELIVERED_RECIPIENTS_MSG =
   'No recipients (no delivery_notify_emails, requester or company email)';
 
+export const DELIVERED_CC = ['shivek@omgexp.com', 'cargo@omgexp.com'];
+
+function normalizeEmail(email: string): string | null {
+  const e = email.trim().toLowerCase();
+  if (!e || !e.includes('@')) return null;
+  return e;
+}
+
 export function resolveDeliveredRecipients(opts: {
   notifyEmails: string[];
   requesterEmail: string | null | undefined;
   companyEmail?: string | null;
-}): string[] {
-  const requester = (opts.requesterEmail || opts.companyEmail || '').trim().toLowerCase();
-  const seen = new Set<string>();
-  const out: string[] = [];
+}): { to: string[]; cc: string[] } {
+  const requester =
+    normalizeEmail(opts.requesterEmail || opts.companyEmail || '') ?? null;
+  const toSeen = new Set<string>();
+  const to: string[] = [];
+  for (const raw of opts.notifyEmails ?? []) {
+    const e = normalizeEmail(raw);
+    if (!e || toSeen.has(e)) continue;
+    toSeen.add(e);
+    to.push(e);
+  }
+  if (to.length === 0 && requester) {
+    toSeen.add(requester);
+    to.push(requester);
+  }
 
-  const add = (email: string) => {
-    const e = email.trim().toLowerCase();
-    if (!e || !e.includes('@') || seen.has(e)) return;
-    seen.add(e);
-    out.push(e);
+  const ccSeen = new Set<string>();
+  const cc: string[] = [];
+  const addCc = (email: string | null) => {
+    if (!email || toSeen.has(email) || ccSeen.has(email)) return;
+    ccSeen.add(email);
+    cc.push(email);
   };
+  for (const e of DELIVERED_CC) addCc(normalizeEmail(e));
+  addCc(requester);
 
-  for (const e of opts.notifyEmails ?? []) add(e);
-  if (requester) add(requester);
-  return out;
+  return { to, cc };
 }
 
 export function stageIndex(stage: string): number {
@@ -227,10 +247,11 @@ export type TrackingDeps = {
   listQuotationsForOp: (opportunityId: string) => Promise<{ id: string; awb_number: string | null; delivered_at: string | null }[]>;
   setOpStage: (opportunityId: string, stage: string) => Promise<void>;
   resolveRequesterEmail: (quotation: QuotationRow) => Promise<string | null>;
-  tryClaimAutoEmail: (quotationId: string, recipients: string[], bcc: string[]) => Promise<'claimed' | 'already'>;
+  tryClaimAutoEmail: (quotationId: string, to: string[], cc: string[]) => Promise<'claimed' | 'already'>;
   sendDelivered: (opts: {
     quotation: QuotationRow;
     recipients: string[];
+    cc: string[];
     source_url: string;
     delivered_at: string;
     trigger: 'auto' | 'manual';
@@ -240,7 +261,7 @@ export type TrackingDeps = {
     quotationId: string,
     patch: { status: 'sent' | 'failed'; resend_message_id?: string; attempts: number; error?: string; sent_at?: string }
   ) => Promise<void>;
-  insertManualLog: (quotationId: string, recipients: string[], bcc: string[]) => Promise<string>;
+  insertManualLog: (quotationId: string, to: string[], cc: string[]) => Promise<string>;
   updateManualLog: (
     logId: string,
     patch: { status: 'sent' | 'failed'; resend_message_id?: string; attempts: number; error?: string; sent_at?: string }
@@ -367,11 +388,11 @@ export async function applyTrackingUpdate(
 
   if (input.status === 'delivered' && firstTimeDelivered && sendEmail) {
     const requesterEmail = await deps.resolveRequesterEmail(quotation);
-    const recipients = resolveDeliveredRecipients({
+    const { to, cc } = resolveDeliveredRecipients({
       notifyEmails: quotation.delivery_notify_emails ?? [],
       requesterEmail,
     });
-    if (recipients.length === 0) {
+    if (to.length === 0) {
       email = 'failed';
       return {
         quotation_id: quotation.id,
@@ -382,13 +403,14 @@ export async function applyTrackingUpdate(
         stage_updated: stageUpdated,
       };
     }
-    const claimResult = await deps.tryClaimAutoEmail(quotation.id, recipients, []);
+    const claimResult = await deps.tryClaimAutoEmail(quotation.id, to, cc);
     if (claimResult === 'already') {
       email = 'claimed_by_other';
     } else {
       const sendResult = await deps.sendDelivered({
         quotation,
-        recipients,
+        recipients: to,
+        cc,
         source_url: input.source_url,
         delivered_at: deliveredAtIso,
         trigger: 'auto',
@@ -429,21 +451,21 @@ export async function resendDeliveredEmail(
   deps: TrackingDeps,
   quotation: QuotationRow,
   sourceUrl: string,
-  deliveredAt: string,
-  bcc: string[]
+  deliveredAt: string
 ): Promise<{ ok: boolean; logId: string; error?: string }> {
   const requesterEmail = await deps.resolveRequesterEmail(quotation);
-  const recipients = resolveDeliveredRecipients({
+  const { to, cc } = resolveDeliveredRecipients({
     notifyEmails: quotation.delivery_notify_emails ?? [],
     requesterEmail,
   });
-  if (recipients.length === 0) {
+  if (to.length === 0) {
     throw new Error(NO_DELIVERED_RECIPIENTS_MSG);
   }
-  const logId = await deps.insertManualLog(quotation.id, recipients, bcc);
+  const logId = await deps.insertManualLog(quotation.id, to, cc);
   const sendResult = await deps.sendDelivered({
     quotation,
-    recipients,
+    recipients: to,
+    cc,
     source_url: sourceUrl,
     delivered_at: deliveredAt,
     trigger: 'manual',

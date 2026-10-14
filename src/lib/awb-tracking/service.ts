@@ -1,5 +1,5 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server';
-import { DELIVERED_BCC, sendDeliveredNotification } from '@/lib/mail';
+import { sendDeliveredNotification } from '@/lib/mail';
 import {
   applyTrackingUpdate,
   carrierFromAwb,
@@ -177,15 +177,15 @@ function buildDeps(): TrackingDeps {
       }
       return null;
     },
-    tryClaimAutoEmail: async (quotationId, recipients, bcc) => {
-      const bccList = bcc.length ? bcc : [DELIVERED_BCC];
+    tryClaimAutoEmail: async (quotationId, to, cc) => {
       const { error } = await supabase.from('notification_log').insert({
         quotation_id: quotationId,
         event: 'delivered',
         send_trigger: 'auto',
         status: 'sending',
-        recipients,
-        bcc: bccList,
+        recipients: to,
+        cc,
+        bcc: [],
         attempts: 0,
       });
       if (error) {
@@ -206,6 +206,7 @@ function buildDeps(): TrackingDeps {
         const result = await sendDeliveredNotification({
           quotation,
           recipients: opts.recipients,
+          cc: opts.cc,
           source_url: opts.source_url,
           delivered_at: opts.delivered_at,
           delivered_local_offset: quotation.delivered_local_offset ?? null,
@@ -230,8 +231,7 @@ function buildDeps(): TrackingDeps {
         .eq('send_trigger', 'auto');
       if (error) throw new Error(error.message);
     },
-    insertManualLog: async (quotationId, recipients, bcc) => {
-      const bccList = bcc.length ? bcc : [DELIVERED_BCC];
+    insertManualLog: async (quotationId, to, cc) => {
       const { data, error } = await supabase
         .from('notification_log')
         .insert({
@@ -239,8 +239,9 @@ function buildDeps(): TrackingDeps {
           event: 'delivered',
           send_trigger: 'manual',
           status: 'sending',
-          recipients,
-          bcc: bccList,
+          recipients: to,
+          cc,
+          bcc: [],
           attempts: 0,
         })
         .select('id')
@@ -448,8 +449,7 @@ export async function manualResendDelivered(ref: { awb_number?: string; omg_numb
     buildDeps(),
     quotation,
     (lastHistory.data?.source_url as string) || '',
-    quotation.delivered_at,
-    [DELIVERED_BCC]
+    quotation.delivered_at
   );
 }
 

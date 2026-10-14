@@ -22,18 +22,21 @@ function resolveRecipients() {
 
 async function sendEmailToRecipients({
   to,
+  cc,
   bcc,
   subject,
   html,
   text,
 }: {
   to: string[];
+  cc?: string[];
   bcc?: string[];
   subject: string;
   html: string;
   text: string;
 }) {
   const recipients = [...new Set(to.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+  const toSet = new Set(recipients);
   if (!process.env.RESEND_API_KEY) {
     console.warn('[mail] RESEND_API_KEY is missing. Email skipped.');
     return;
@@ -44,10 +47,18 @@ async function sendEmailToRecipients({
   }
 
   try {
+    const ccList = [
+      ...new Set(
+        (cc ?? [])
+          .map((e) => e.trim().toLowerCase())
+          .filter((e) => e && !toSet.has(e))
+      ),
+    ];
     const bccList = [...new Set((bcc ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean))];
     const { data, error } = await resend.emails.send({
       from: resolveSender(),
       to: recipients,
+      ...(ccList.length ? { cc: ccList } : {}),
       ...(bccList.length ? { bcc: bccList } : {}),
       subject,
       html,
@@ -287,8 +298,6 @@ export async function sendQcRequestNotification({
   return sendEmailToRecipients({ to, subject, html, text });
 }
 
-export const DELIVERED_BCC = 'cargo@omgexp.com';
-
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -297,6 +306,7 @@ function sleep(ms: number) {
 export async function sendDeliveredNotification(opts: {
   quotation: QuotationRow;
   recipients: string[];
+  cc?: string[];
   source_url: string;
   delivered_at: string;
   delivered_local_offset?: string | null;
@@ -318,7 +328,7 @@ export async function sendDeliveredNotification(opts: {
     try {
       const data = await sendEmailToRecipients({
         to,
-        bcc: [DELIVERED_BCC],
+        cc: opts.cc ?? [],
         subject,
         html,
         text,
