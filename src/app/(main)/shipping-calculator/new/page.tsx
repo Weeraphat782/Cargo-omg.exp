@@ -72,7 +72,7 @@ const DEFAULT_ADDITIONAL_CHARGES = [
     'Broker Registration Fee (one-time)',
     'E-Custom (Paperless) Registration (one-time)',
     'Renewal Fee (one-time)',
-].map((name) => ({ name, description: '', amount: 0 }));
+].map((name) => ({ name, description: name, amount: 0 }));
 
 function defaultAdditionalTaxableFlags() {
     return DEFAULT_ADDITIONAL_CHARGES.map(() => true);
