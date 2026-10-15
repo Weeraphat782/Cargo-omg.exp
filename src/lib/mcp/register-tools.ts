@@ -10,6 +10,7 @@ import {
   getQuotationDocuments,
   listNewQuotations,
   markBookingEmailDrafted,
+  replaceQuotationDocument,
   updateOpCard,
   updateQuotationNetWeight,
 } from '@/lib/mcp/booking-service';
@@ -236,6 +237,70 @@ const refSchema = z
   })
   .refine((a) => a.quotation_id || a.omg_number, 'Provide quotation_id or omg_number');
 
+const docsRefInputSchema = fromJsonSchema<{
+  quotation_id?: string;
+  omg_number?: string;
+  include_superseded?: boolean;
+}>({
+  type: 'object',
+  properties: {
+    quotation_id: { type: 'string', description: 'Quotation UUID' },
+    omg_number: { type: 'string', description: 'OMG number, e.g. OMG10074' },
+    include_superseded: {
+      type: 'boolean',
+      description: 'Include superseded document versions (default false)',
+    },
+  },
+  additionalProperties: false,
+});
+
+const docsRefSchema = z
+  .object({
+    quotation_id: z.string().uuid().optional(),
+    omg_number: z.string().min(1).optional(),
+    include_superseded: z.boolean().optional(),
+  })
+  .refine((a) => a.quotation_id || a.omg_number, 'Provide quotation_id or omg_number');
+
+const replaceDocInputSchema = fromJsonSchema<{
+  quotation_id?: string;
+  omg_number?: string;
+  doc_type: string;
+  file_base64?: string;
+  file_url?: string;
+  filename: string;
+}>({
+  type: 'object',
+  properties: {
+    quotation_id: { type: 'string', description: 'Quotation UUID' },
+    omg_number: { type: 'string', description: 'OMG number, e.g. OMG10074' },
+    doc_type: {
+      type: 'string',
+      enum: ['packing_list', 'commercial_invoice', 'phyto', 'other'],
+    },
+    file_base64: { type: 'string', description: 'Base64 file content (use file_url OR this)' },
+    file_url: { type: 'string', description: 'Public https URL to fetch file (use file_base64 OR this)' },
+    filename: { type: 'string', description: 'Original filename including extension' },
+  },
+  required: ['doc_type', 'filename'],
+  additionalProperties: false,
+});
+
+const replaceDocSchema = z
+  .object({
+    quotation_id: z.string().uuid().optional(),
+    omg_number: z.string().min(1).optional(),
+    doc_type: z.enum(['packing_list', 'commercial_invoice', 'phyto', 'other']),
+    file_base64: z.string().optional(),
+    file_url: z.string().url().optional(),
+    filename: z.string().min(1),
+  })
+  .refine((a) => a.quotation_id || a.omg_number, 'Provide quotation_id or omg_number')
+  .refine(
+    (a) => Boolean(a.file_base64?.trim()) !== Boolean(a.file_url?.trim()),
+    'Provide exactly one of file_base64 or file_url'
+  );
+
 const markSchema = refSchema.and(
   z.object({ drafted_by: z.string().optional() })
 );
@@ -351,14 +416,36 @@ export function registerBookingTools(server: McpServer): void {
   server.registerTool(
     'get_quotation_documents',
     {
-      description: 'List customer documents with signed download URLs for a quotation.',
-      inputSchema: refInputSchema,
+      description:
+        'List customer documents with signed download URLs. Default: current versions only. Set include_superseded=true for replaced history.',
+      inputSchema: docsRefInputSchema,
     },
     async (args) => {
-      const ref = parseOrThrow(refSchema, args);
+      const ref = parseOrThrow(docsRefSchema, args);
       const docs = await getQuotationDocuments(ref);
       if (!docs) return jsonText({ error: 'Quotation not found.' });
       return jsonText(docs);
+    }
+  );
+
+  server.registerTool(
+    'replace_quotation_document',
+    {
+      description:
+        'Replace the current packing list, commercial invoice, phyto, or other document on a quotation (by OMG#). Supersedes the old file, logs activity, emits quotation.docs_replaced (not docs_uploaded). Rejects Lose Case.',
+      inputSchema: replaceDocInputSchema,
+    },
+    async (args) => {
+      try {
+        const parsed = parseOrThrow(replaceDocSchema, args);
+        const result = await replaceQuotationDocument(parsed);
+        return jsonText(result);
+      } catch (err) {
+        return jsonText({
+          ok: false,
+          error: err instanceof Error ? err.message : 'Replace failed',
+        });
+      }
     }
   );
 

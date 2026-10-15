@@ -122,6 +122,7 @@ export async function buildBookingSheetPayload(
       'id, file_name, original_file_name, document_type, document_type_name, file_path, file_url, mime_type, submitted_at, storage_provider'
     )
     .eq('quotation_id', row.id)
+    .is('superseded_at', null)
     .order('submitted_at', { ascending: false });
 
   const documents = await Promise.all(

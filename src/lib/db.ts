@@ -471,6 +471,9 @@ export interface DocumentSubmission {
   description?: string; // AI-generated document summary
   storage_provider?: 'supabase' | 'r2';
   source?: string; // 'company_profile' for auto-linked documents
+  superseded_at?: string | null;
+  superseded_by?: string | null;
+  replaced_by?: string | null;
 }
 
 export interface ProformaLineItem {
@@ -1541,6 +1544,7 @@ export async function getQuotationByShareToken(token: string): Promise<(Quotatio
       .from('document_submissions')
       .select('*')
       .eq('quotation_id', data.id)
+      .is('superseded_at', null)
       .order('submitted_at', { ascending: false });
 
     return { ...data, documents: docs || [] } as (Quotation & { documents?: DocumentSubmission[] }) | null;
@@ -1607,7 +1611,7 @@ export async function getDocumentSubmissions(quotationId?: string) {
       .order('submitted_at', { ascending: false });
 
     if (quotationId) {
-      query = query.eq('quotation_id', quotationId);
+      query = query.eq('quotation_id', quotationId).is('superseded_at', null);
     }
 
     const { data, error } = await query;

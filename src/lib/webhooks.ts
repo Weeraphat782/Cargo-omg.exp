@@ -34,6 +34,15 @@ export interface QuotationCreatedPayload {
   }>;
 }
 
+export interface QuotationDocsReplacedPayload {
+  event: 'quotation.docs_replaced';
+  emitted_at: string;
+  quotation_id: string;
+  omg_number: string | null;
+  doc_type: string;
+  new_url: string;
+}
+
 export interface QuotationDocsUploadedPayload {
   event: 'quotation.docs_uploaded';
   emitted_at: string;
@@ -242,6 +251,34 @@ export async function emitQuotationCreated(
       `[webhook] quotation.created ${quote.quotation_no || quote.id} build failed:`,
       err
     );
+  }
+}
+
+/** Document replaced via MCP — separate from docs_uploaded so booking draft automation does not re-fire. */
+export async function emitQuotationDocsReplaced(
+  _supabase: SupabaseClient,
+  params: {
+    quotation_id: string;
+    omg_number: string | null;
+    doc_type: string;
+    new_url: string;
+  }
+): Promise<void> {
+  try {
+    const payload: QuotationDocsReplacedPayload = {
+      event: 'quotation.docs_replaced',
+      emitted_at: new Date().toISOString(),
+      quotation_id: params.quotation_id,
+      omg_number: params.omg_number,
+      doc_type: params.doc_type,
+      new_url: params.new_url,
+    };
+    await postWebhook('quotation.docs_replaced', JSON.stringify(payload), {
+      omg: params.omg_number,
+      quotationId: params.quotation_id,
+    });
+  } catch (err) {
+    console.error('[webhook] quotation.docs_replaced failed:', err);
   }
 }
 

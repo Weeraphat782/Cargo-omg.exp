@@ -119,6 +119,7 @@ export async function getCustomerDocuments(providedUserId?: string): Promise<(Do
       .from('document_submissions')
       .select('*')
       .in('quotation_id', quotationIds)
+      .is('superseded_at', null)
       .order('submitted_at', { ascending: false });
 
     if (error) {

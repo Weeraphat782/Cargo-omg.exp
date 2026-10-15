@@ -21,6 +21,13 @@ import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { absoluteUrl } from '@/lib/site';
 import { getFileUrl } from '@/lib/storage';
 import type { DocumentSubmission, Pallet, Quotation } from '@/lib/db';
+import {
+  attachmentFromDocumentRow,
+  listQuotationDocumentRows,
+  replaceQuotationDocument,
+} from '@/lib/mcp/replace-document';
+
+export { replaceQuotationDocument };
 
 export type { BookingEmailDraft } from '@/lib/mcp/booking-draft';
 export { assembleBookingDraft, piecesLabel, productLabelFromCommodity, summarizePallets };
@@ -325,34 +332,32 @@ export async function getQuotationDetail(ref: {
   const quotation = await fetchQuotationByRef(supabase, ref);
   if (!quotation) return null;
 
-  const { data: docs } = await supabase
-    .from('document_submissions')
-    .select('*')
-    .eq('quotation_id', quotation.id)
-    .order('submitted_at', { ascending: false });
+  const docs = await listQuotationDocumentRows(supabase, quotation.id, false);
 
-  return { quotation, documents: (docs ?? []) as DocumentSubmission[] };
+  return { quotation, documents: docs as DocumentSubmission[] };
 }
 
 export async function getQuotationDocuments(ref: {
   quotation_id?: string;
   omg_number?: string;
+  include_superseded?: boolean;
 }) {
-  const detail = await getQuotationDetail(ref);
-  if (!detail) return null;
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error('Server configuration error.');
 
-  const attachments = await Promise.all(
-    detail.documents.map(async (doc) => ({
-      id: doc.id,
-      document_type: doc.document_type,
-      document_type_name: doc.document_type_name,
-      file_name: doc.original_file_name || doc.file_name,
-      download_url: doc.file_path
-        ? await getFileUrl(doc.file_path, doc.storage_provider || 'r2')
-        : doc.file_url || null,
-    }))
-  );
-  return { quotation_id: detail.quotation.id, omg_number: detail.quotation.quotation_no, attachments };
+  const quotation = await fetchQuotationByRef(supabase, ref);
+  if (!quotation) return null;
+
+  const includeSuperseded = ref.include_superseded === true;
+  const docs = await listQuotationDocumentRows(supabase, quotation.id, includeSuperseded);
+
+  const attachments = await Promise.all(docs.map((doc) => attachmentFromDocumentRow(doc)));
+  return {
+    quotation_id: quotation.id,
+    omg_number: quotation.quotation_no,
+    include_superseded: includeSuperseded,
+    attachments,
+  };
 }
 
 export async function extractBookingFields(ref: {

@@ -22,7 +22,8 @@
     "verify:animation": "npx ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" src/components/social-artwork/video/animation.ts",
     "verify:t5": "node scripts/verify-t5-highlight.cjs",
     "verify:swap-documents": "node scripts/verify-swap-documents.cjs",
-    "verify:booking-view": "node scripts/verify-booking-view.cjs"
+    "verify:booking-view": "node scripts/verify-booking-view.cjs",
+    "verify:replace-document": "npx tsx scripts/verify-replace-document.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.23",
