@@ -427,7 +427,10 @@ export async function attachmentFromDocumentRow(doc: DocumentRow) {
     document_type_name: doc.document_type_name,
     file_name: doc.original_file_name || doc.file_name,
     download_url: doc.file_path
-      ? await getFileUrl(doc.file_path, doc.storage_provider || 'r2')
+      ? await getFileUrl(
+          doc.file_path,
+          doc.storage_provider === 'supabase' ? 'supabase' : 'r2'
+        )
       : doc.file_url || null,
     superseded_at: doc.superseded_at ?? null,
     is_current: !doc.superseded_at,
