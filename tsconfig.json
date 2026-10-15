@@ -23,5 +23,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "ai-doc-review-main"]
+  "exclude": ["node_modules", "ai-doc-review-main", "scripts"]
 }

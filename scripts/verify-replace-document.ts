@@ -8,6 +8,13 @@ import {
   type ReplaceDocumentDeps,
 } from '../src/lib/mcp/replace-document';
 
+type TestReplaceDeps = ReplaceDocumentDeps & {
+  _docs: Map<string, DocumentRow>;
+  _activity: Record<string, unknown>[];
+  _getWebhook: () => string | null;
+  _docsUploadedFired: () => boolean;
+};
+
 assert.equal(parseReplaceDocType('packing_list'), 'packing_list');
 assert.equal(parseReplaceDocType('bad'), null);
 assert.ok(docTypeMatchesReplaceTarget('phyto', 'phytosanitary-certificate'));
@@ -24,7 +31,7 @@ const Q: QuotationForReplace = {
   destination_id: 'dest1',
 };
 
-function makeDeps(overrides: Partial<ReplaceDocumentDeps> = {}): ReplaceDocumentDeps {
+function makeDeps(overrides: Partial<ReplaceDocumentDeps> = {}): TestReplaceDeps {
   const docs = new Map<string, DocumentRow>();
   let seq = 0;
   const activity: Record<string, unknown>[] = [];
@@ -84,16 +91,8 @@ function makeDeps(overrides: Partial<ReplaceDocumentDeps> = {}): ReplaceDocument
     _docs: docs,
     _activity: activity,
     _getWebhook: () => webhookEvent,
-    _setDocsUploaded: () => {
-      docsUploadedFired = true;
-    },
     _docsUploadedFired: () => docsUploadedFired,
-  }) as ReplaceDocumentDeps & {
-    _docs: Map<string, DocumentRow>;
-    _activity: Record<string, unknown>[];
-    _getWebhook: () => string | null;
-    _docsUploadedFired: () => boolean;
-  };
+  }) as TestReplaceDeps;
 }
 
 async function runReplaceSuccess() {
