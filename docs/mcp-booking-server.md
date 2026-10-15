@@ -22,15 +22,24 @@ Grok Bot connects over the public internet with a static Bearer token. When a cu
 
 If `QUOTATION_WEBHOOK_URL` or `WEBHOOK_SIGNING_SECRET` is unset, push is skipped (no error). Grok can still poll `list_new_quotations` via MCP.
 
-Run migration: `Tr/migrations/012_add_booking_email_drafted.sql`
+Run migrations: `Tr/migrations/012_add_booking_email_drafted.sql`, `Tr/migrations/031_replace_quotation_document.sql` (supersede columns + activity log for doc replace).
 
 ## MCP tools
+
+The server registers **17 tools** in [`register-tools.ts`](../src/lib/mcp/register-tools.ts). There is no hardcoded tools list or cache — each MCP session gets `tools/list` from live registration. If a client shows **16 tools**, it is usually a **stale session** (tools cached before deploy `276ee91`) or bot instructions copied from an old doc. Reconnect to `https://cargo.omgexp.com/api/mcp` with `Authorization: Bearer $MCP_API_TOKEN` (Vercel Production env **`MCP_API_TOKEN`**) and call `tools/list` again.
+
+Verify from your machine (token from Vercel → Settings → Environment Variables → Production):
+
+```bash
+MCP_API_TOKEN=... npm run verify:mcp-tools
+```
 
 | Tool | Purpose |
 |------|---------|
 | `list_new_quotations` | Pending quotes (default `pending_approval`), excludes drafted |
 | `get_quotation` | Full detail + attachment metadata |
-| `get_quotation_documents` | Signed download URLs |
+| `get_quotation_documents` | Signed download URLs; `include_superseded=true` for replaced history |
+| `replace_quotation_document` | Replace packing list, CI, phyto, or other on a quote (by OMG#); supersedes old file, activity log, webhook `quotation.docs_replaced` (not `docs_uploaded`); rejects Lose Case |
 | `extract_booking_fields` | Net weight (quotation), packaging, routing + doc URLs for Grok to read when pallets are 0 |
 | `update_quotation_net_weight` | Write net KG to `total_actual_weight` (not chargeable) |
 | `approve_quotation` | Staff approve customer quote (`pending_approval` -> `draft`/`docs_uploaded`); never changes destination or pricing |
@@ -53,6 +62,34 @@ The app does **not** scrape airline sites. Grok checks carrier tracking pages an
 | `get_awb_tracking` | Current status, history, notification log (by AWB or OMG number) |
 | `resend_delivered_email` | Resend delivered notification (already delivered); pass `awb_number` or `omg_number`; new manual log row with real To list |
 | `update_awb_number` | Fix AWB on a quote (`omg_number` + `awb_number`); resets tracking, clears `delivered_at` when changed, logs old AWB in history |
+
+### `replace_quotation_document` arguments
+
+Required:
+
+- `doc_type`: `packing_list` | `commercial_invoice` | `phyto` | `other`
+- `filename`: original filename with extension
+
+One of:
+
+- `quotation_id` (UUID) **or** `omg_number` (e.g. `OMG10074`)
+
+Exactly one file source:
+
+- `file_base64` **or** `file_url` (public https URL)
+
+Optional: none. Packing-list replace returns suggestions only (call `update_quotation_net_weight` separately if needed).
+
+Example:
+
+```json
+{
+  "omg_number": "OMG10074",
+  "doc_type": "commercial_invoice",
+  "filename": "CI-revised.pdf",
+  "file_url": "https://example.com/ci.pdf"
+}
+```
 
 **`tracking_status` values:** `not_tracked`, `booked`, `departed`, `in_transit`, `arrived`, `delivered`, `exception`
 
@@ -169,13 +206,19 @@ Example payload:
 }
 ```
 
+## Webhook `quotation.docs_replaced`
+
+Fired when MCP **`replace_quotation_document`** supersedes a document. **Not** the same as `quotation.docs_uploaded` (customer upload flow). Grok can refresh doc URLs via `get_quotation_documents` after this event.
+
+Payload includes `quotation_id`, `omg_number`, `doc_type`, `new_document_id`, `old_document_id`, and `document_list_url`.
+
 ### Outbound auth (cargo.omgexp.com → Grok)
 
 No HMAC. The app sends:
 
 - `Authorization: Bearer $WEBHOOK_SIGNING_SECRET` (Grok-provided webhook key)
 - `Content-Type: application/json`
-- `X-OMG-Event: quotation.created` or `quotation.docs_uploaded`
+- `X-OMG-Event: quotation.created`, `quotation.docs_uploaded`, or `quotation.docs_replaced`
 
 HTTP status, response body snippet, and latency (ms) are logged with OMG# and quotation_id (secrets never logged). Non-2xx and timeouts log as errors. Retries once on 5xx/timeout.
 
