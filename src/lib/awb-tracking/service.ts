@@ -177,7 +177,7 @@ function buildDeps(): TrackingDeps {
       }
       return null;
     },
-    tryClaimAutoEmail: async (quotationId, to, cc) => {
+    tryClaimAutoEmail: async (quotationId, to, cc, bcc) => {
       const { error } = await supabase.from('notification_log').insert({
         quotation_id: quotationId,
         event: 'delivered',
@@ -185,7 +185,7 @@ function buildDeps(): TrackingDeps {
         status: 'sending',
         recipients: to,
         cc,
-        bcc: [],
+        bcc,
         attempts: 0,
       });
       if (error) {
@@ -207,6 +207,7 @@ function buildDeps(): TrackingDeps {
           quotation,
           recipients: opts.recipients,
           cc: opts.cc,
+          bcc: opts.bcc,
           source_url: opts.source_url,
           delivered_at: opts.delivered_at,
           delivered_local_offset: quotation.delivered_local_offset ?? null,
@@ -231,7 +232,7 @@ function buildDeps(): TrackingDeps {
         .eq('send_trigger', 'auto');
       if (error) throw new Error(error.message);
     },
-    insertManualLog: async (quotationId, to, cc) => {
+    insertManualLog: async (quotationId, to, cc, bcc) => {
       const { data, error } = await supabase
         .from('notification_log')
         .insert({
@@ -241,7 +242,7 @@ function buildDeps(): TrackingDeps {
           status: 'sending',
           recipients: to,
           cc,
-          bcc: [],
+          bcc,
           attempts: 0,
         })
         .select('id')

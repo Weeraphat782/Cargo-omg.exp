@@ -307,6 +307,7 @@ export async function sendDeliveredNotification(opts: {
   quotation: QuotationRow;
   recipients: string[];
   cc?: string[];
+  bcc?: string[];
   source_url: string;
   delivered_at: string;
   delivered_local_offset?: string | null;
@@ -329,6 +330,7 @@ export async function sendDeliveredNotification(opts: {
       const data = await sendEmailToRecipients({
         to,
         cc: opts.cc ?? [],
+        bcc: opts.bcc ?? [],
         subject,
         html,
         text,

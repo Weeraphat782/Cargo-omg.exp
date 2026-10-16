@@ -88,7 +88,8 @@ export function normalizeIata(code?: string): string | undefined {
 export const NO_DELIVERED_RECIPIENTS_MSG =
   'No recipients (no delivery_notify_emails, requester or company email)';
 
-export const DELIVERED_CC = ['shivek@omgexp.com', 'cargo@omgexp.com'];
+export const DELIVERED_CC = ['shivek@omgexp.com'];
+export const DELIVERED_BCC = ['cargo@omgexp.com'];
 
 function normalizeEmail(email: string): string | null {
   const e = email.trim().toLowerCase();
@@ -100,7 +101,7 @@ export function resolveDeliveredRecipients(opts: {
   notifyEmails: string[];
   requesterEmail: string | null | undefined;
   companyEmail?: string | null;
-}): { to: string[]; cc: string[] } {
+}): { to: string[]; cc: string[]; bcc: string[] } {
   const requester =
     normalizeEmail(opts.requesterEmail || opts.companyEmail || '') ?? null;
   const toSeen = new Set<string>();
@@ -126,7 +127,16 @@ export function resolveDeliveredRecipients(opts: {
   for (const e of DELIVERED_CC) addCc(normalizeEmail(e));
   addCc(requester);
 
-  return { to, cc };
+  const bccSeen = new Set<string>();
+  const bcc: string[] = [];
+  const addBcc = (email: string | null) => {
+    if (!email || toSeen.has(email) || ccSeen.has(email) || bccSeen.has(email)) return;
+    bccSeen.add(email);
+    bcc.push(email);
+  };
+  for (const e of DELIVERED_BCC) addBcc(normalizeEmail(e));
+
+  return { to, cc, bcc };
 }
 
 export function stageIndex(stage: string): number {
@@ -208,6 +218,7 @@ export type ApplyTrackingResult = {
   already_delivered: boolean;
   email: 'sent' | 'skipped' | 'failed' | 'claimed_by_other';
   stage_updated: boolean;
+  log_error?: string;
 };
 
 export type TrackingDeps = {
@@ -247,11 +258,17 @@ export type TrackingDeps = {
   listQuotationsForOp: (opportunityId: string) => Promise<{ id: string; awb_number: string | null; delivered_at: string | null }[]>;
   setOpStage: (opportunityId: string, stage: string) => Promise<void>;
   resolveRequesterEmail: (quotation: QuotationRow) => Promise<string | null>;
-  tryClaimAutoEmail: (quotationId: string, to: string[], cc: string[]) => Promise<'claimed' | 'already'>;
+  tryClaimAutoEmail: (
+    quotationId: string,
+    to: string[],
+    cc: string[],
+    bcc: string[]
+  ) => Promise<'claimed' | 'already'>;
   sendDelivered: (opts: {
     quotation: QuotationRow;
     recipients: string[];
     cc: string[];
+    bcc: string[];
     source_url: string;
     delivered_at: string;
     trigger: 'auto' | 'manual';
@@ -261,7 +278,12 @@ export type TrackingDeps = {
     quotationId: string,
     patch: { status: 'sent' | 'failed'; resend_message_id?: string; attempts: number; error?: string; sent_at?: string }
   ) => Promise<void>;
-  insertManualLog: (quotationId: string, to: string[], cc: string[]) => Promise<string>;
+  insertManualLog: (
+    quotationId: string,
+    to: string[],
+    cc: string[],
+    bcc: string[]
+  ) => Promise<string>;
   updateManualLog: (
     logId: string,
     patch: { status: 'sent' | 'failed'; resend_message_id?: string; attempts: number; error?: string; sent_at?: string }
@@ -386,9 +408,11 @@ export async function applyTrackingUpdate(
 
   }
 
+  let logError: string | undefined;
+
   if (input.status === 'delivered' && firstTimeDelivered && sendEmail) {
     const requesterEmail = await deps.resolveRequesterEmail(quotation);
-    const { to, cc } = resolveDeliveredRecipients({
+    const { to, cc, bcc } = resolveDeliveredRecipients({
       notifyEmails: quotation.delivery_notify_emails ?? [],
       requesterEmail,
     });
@@ -403,7 +427,12 @@ export async function applyTrackingUpdate(
         stage_updated: stageUpdated,
       };
     }
-    const claimResult = await deps.tryClaimAutoEmail(quotation.id, to, cc);
+    let claimResult: 'claimed' | 'already' | null = null;
+    try {
+      claimResult = await deps.tryClaimAutoEmail(quotation.id, to, cc, bcc);
+    } catch (err) {
+      logError = err instanceof Error ? err.message : String(err);
+    }
     if (claimResult === 'already') {
       email = 'claimed_by_other';
     } else {
@@ -411,25 +440,40 @@ export async function applyTrackingUpdate(
         quotation,
         recipients: to,
         cc,
+        bcc,
         source_url: input.source_url,
         delivered_at: deliveredAtIso,
         trigger: 'auto',
       });
       if (sendResult.ok) {
         email = 'sent';
-        await deps.finalizeAutoLog(quotation.id, {
-          status: 'sent',
-          resend_message_id: sendResult.messageId,
-          attempts: sendResult.messageId ? 1 : 0,
-          sent_at: new Date().toISOString(),
-        });
+        if (claimResult === 'claimed') {
+          try {
+            await deps.finalizeAutoLog(quotation.id, {
+              status: 'sent',
+              resend_message_id: sendResult.messageId,
+              attempts: sendResult.messageId ? 1 : 0,
+              sent_at: new Date().toISOString(),
+            });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            logError = logError ? `${logError}; ${msg}` : msg;
+          }
+        }
       } else {
         email = 'failed';
-        await deps.finalizeAutoLog(quotation.id, {
-          status: 'failed',
-          attempts: 3,
-          error: sendResult.error,
-        });
+        if (claimResult === 'claimed') {
+          try {
+            await deps.finalizeAutoLog(quotation.id, {
+              status: 'failed',
+              attempts: 3,
+              error: sendResult.error,
+            });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            logError = logError ? `${logError}; ${msg}` : msg;
+          }
+        }
       }
     }
   } else if (input.status === 'delivered' && firstTimeDelivered && !sendEmail) {
@@ -443,6 +487,7 @@ export async function applyTrackingUpdate(
     already_delivered: hadDeliveredAt && !firstTimeDelivered,
     email: hadDeliveredAt && input.status === 'delivered' ? 'skipped' : email,
     stage_updated: stageUpdated,
+    ...(logError ? { log_error: logError } : {}),
   };
 }
 
@@ -452,31 +497,50 @@ export async function resendDeliveredEmail(
   quotation: QuotationRow,
   sourceUrl: string,
   deliveredAt: string
-): Promise<{ ok: boolean; logId: string; error?: string }> {
+): Promise<{ ok: boolean; logId: string; error?: string; log_error?: string }> {
   const requesterEmail = await deps.resolveRequesterEmail(quotation);
-  const { to, cc } = resolveDeliveredRecipients({
+  const { to, cc, bcc } = resolveDeliveredRecipients({
     notifyEmails: quotation.delivery_notify_emails ?? [],
     requesterEmail,
   });
   if (to.length === 0) {
     throw new Error(NO_DELIVERED_RECIPIENTS_MSG);
   }
-  const logId = await deps.insertManualLog(quotation.id, to, cc);
+  let logId = '';
+  let logError: string | undefined;
+  try {
+    logId = await deps.insertManualLog(quotation.id, to, cc, bcc);
+  } catch (err) {
+    logError = err instanceof Error ? err.message : String(err);
+  }
   const sendResult = await deps.sendDelivered({
     quotation,
     recipients: to,
     cc,
+    bcc,
     source_url: sourceUrl,
     delivered_at: deliveredAt,
     trigger: 'manual',
+    logId: logId || undefined,
+  });
+  if (logId) {
+    try {
+      await deps.updateManualLog(logId, {
+        status: sendResult.ok ? 'sent' : 'failed',
+        resend_message_id: sendResult.messageId,
+        attempts: sendResult.ok ? 1 : 3,
+        error: sendResult.error,
+        sent_at: sendResult.ok ? new Date().toISOString() : undefined,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError = logError ? `${logError}; ${msg}` : msg;
+    }
+  }
+  return {
+    ok: sendResult.ok,
     logId,
-  });
-  await deps.updateManualLog(logId, {
-    status: sendResult.ok ? 'sent' : 'failed',
-    resend_message_id: sendResult.messageId,
-    attempts: sendResult.ok ? 1 : 3,
     error: sendResult.error,
-    sent_at: sendResult.ok ? new Date().toISOString() : undefined,
-  });
-  return { ok: sendResult.ok, logId, error: sendResult.error };
+    ...(logError ? { log_error: logError } : {}),
+  };
 }

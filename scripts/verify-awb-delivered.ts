@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   applyTrackingUpdate,
   carrierFromAwb,
+  DELIVERED_BCC,
   DELIVERED_CC,
   NO_DELIVERED_RECIPIENTS_MSG,
   normalizeAwb,
@@ -35,6 +36,7 @@ const emptyNotify = resolveDeliveredRecipients({
 });
 assert.deepEqual(emptyNotify.to, ['user@example.com']);
 assert.deepEqual(emptyNotify.cc, [...DELIVERED_CC]);
+assert.deepEqual(emptyNotify.bcc, [...DELIVERED_BCC]);
 
 const notifyWithoutRequester = resolveDeliveredRecipients({
   notifyEmails: ['a@b.com', 'A@B.com'],
@@ -42,6 +44,7 @@ const notifyWithoutRequester = resolveDeliveredRecipients({
 });
 assert.deepEqual(notifyWithoutRequester.to, ['a@b.com']);
 assert.deepEqual(notifyWithoutRequester.cc, [...DELIVERED_CC, 'c@d.com']);
+assert.deepEqual(notifyWithoutRequester.bcc, [...DELIVERED_BCC]);
 
 const cargoInNotify = resolveDeliveredRecipients({
   notifyEmails: ['Cargo@OMGexp.com'],
@@ -49,6 +52,7 @@ const cargoInNotify = resolveDeliveredRecipients({
 });
 assert.deepEqual(cargoInNotify.to, ['cargo@omgexp.com']);
 assert.deepEqual(cargoInNotify.cc, ['shivek@omgexp.com', 'c@d.com']);
+assert.deepEqual(cargoInNotify.bcc, []);
 
 assert.equal(nextStageAfterDelivery('payment_received'), 'payment_received');
 assert.equal(nextStageAfterDelivery('picked_up'), 'delivered');
@@ -134,7 +138,9 @@ async function runIdempotencyCheck() {
   let autoLogClaimed = false;
   let loggedTo: string[] = [];
   let loggedCc: string[] = [];
+  let loggedBcc: string[] = [];
   let sendCc: string[] = [];
+  let sendBcc: string[] = [];
 
   const q = makeQuotation();
 
@@ -156,15 +162,17 @@ async function runIdempotencyCheck() {
       stage = s;
     },
     resolveRequesterEmail: async () => 'user@example.com',
-    tryClaimAutoEmail: async (_id, to, cc) => {
+    tryClaimAutoEmail: async (_id, to, cc, bcc) => {
       loggedTo = to;
       loggedCc = cc;
+      loggedBcc = bcc;
       if (autoLogClaimed) return 'already';
       autoLogClaimed = true;
       return 'claimed';
     },
     sendDelivered: async (opts) => {
       sendCc = opts.cc;
+      sendBcc = opts.bcc;
       sendCount++;
       return { ok: true, messageId: 'msg_1' };
     },
@@ -188,7 +196,9 @@ async function runIdempotencyCheck() {
   assert.equal(stage, 'delivered');
   assert.deepEqual(loggedTo, ['notify@example.com']);
   assert.deepEqual(loggedCc, [...DELIVERED_CC, 'user@example.com']);
+  assert.deepEqual(loggedBcc, [...DELIVERED_BCC]);
   assert.deepEqual(sendCc, loggedCc);
+  assert.deepEqual(sendBcc, loggedBcc);
 
   const r2 = await applyTrackingUpdate(deps, input);
   assert.equal(r2.already_delivered, true);
@@ -296,9 +306,10 @@ async function runResendManualLogRecipients() {
     tryClaimAutoEmail: async () => 'already',
     sendDelivered: async () => ({ ok: true, messageId: 'm1' }),
     finalizeAutoLog: async () => {},
-    insertManualLog: async (_id, to, cc) => {
+    insertManualLog: async (_id, to, cc, bcc) => {
       loggedTo = to;
       loggedCc = cc;
+      assert.deepEqual(bcc, [...DELIVERED_BCC]);
       return 'log2';
     },
     updateManualLog: async () => {},
@@ -306,6 +317,44 @@ async function runResendManualLogRecipients() {
   await resendDeliveredEmail(deps, q, 'https://x', q.delivered_at!);
   assert.deepEqual(loggedTo, ['notify@example.com']);
   assert.deepEqual(loggedCc, [...DELIVERED_CC, 'user@example.com']);
+}
+
+async function runLogInsertFailStillSends() {
+  let sendCount = 0;
+  const q = makeQuotation();
+  const deps: TrackingDeps = {
+    findQuotationByAwb: async () => q,
+    insertHistory: async () => {},
+    updateStatus: async () => {},
+    mergeTrackingHints: async () => {},
+    claimDelivered: async () => true,
+    getOpStage: async () => 'picked_up',
+    listQuotationsForOp: async () => [{ id: 'q1', awb_number: q.awb_number, delivered_at: null }],
+    setOpStage: async () => {},
+    resolveRequesterEmail: async () => 'user@example.com',
+    tryClaimAutoEmail: async () => {
+      throw new Error("Could not find the 'cc' column of 'notification_log'");
+    },
+    sendDelivered: async () => {
+      sendCount++;
+      return { ok: true, messageId: 'msg_x' };
+    },
+    finalizeAutoLog: async () => {
+      throw new Error('should not finalize');
+    },
+    insertManualLog: async () => 'log1',
+    updateManualLog: async () => {},
+  };
+  const r = await applyTrackingUpdate(deps, {
+    awb_number: '21710648864',
+    status: 'delivered',
+    raw_text: 'Delivered',
+    source_url: 'https://example.com/track',
+    delivered_at: '2026-09-30T14:20:00+02:00',
+  });
+  assert.equal(r.email, 'sent');
+  assert.equal(sendCount, 1);
+  assert.match(r.log_error || '', /cc.*notification_log/);
 }
 
 async function runRouteCorrectionOnDelivered() {
@@ -384,6 +433,7 @@ Promise.all([
   runEmptyRecipientsAuto(),
   runResendManualLogRecipients(),
   runResendEmptyThrows(),
+  runLogInsertFailStillSends(),
   runRouteCorrectionOnDelivered(),
 ])
   .then(() => {
