@@ -16,7 +16,7 @@ import {
 } from './core';
 
 const QUOTATION_TRACKING_SELECT =
-  'id, quotation_no, awb_number, opportunity_id, carrier_code, carrier_code_manual, tracking_status, delivered_at, delivered_local_offset, delivery_notify_emails, customer_user_id, destination, requested_destination, customer_name, company_name, chargeable_weight, is_chargeable_weight_manual, manual_chargeable_weight, pallets, booking_air_freight, awb_origin, awb_destination, created_at';
+  'id, quotation_no, awb_number, opportunity_id, carrier_code, carrier_code_manual, tracking_status, delivered_at, delivered_local_offset, delivery_notify_emails, customer_user_id, destination, requested_destination, customer_name, company_name, consignee_name, booking_details, chargeable_weight, is_chargeable_weight_manual, manual_chargeable_weight, pallets, booking_air_freight, awb_origin, awb_destination, created_at';
 
 function mapQuotationRow(data: Record<string, unknown>): QuotationRow {
   return {
@@ -35,6 +35,11 @@ function mapQuotationRow(data: Record<string, unknown>): QuotationRow {
     requested_destination: (data.requested_destination as string) ?? null,
     customer_name: (data.customer_name as string) ?? null,
     company_name: (data.company_name as string) ?? null,
+    consignee_name: (data.consignee_name as string) ?? null,
+    booking_details:
+      data.booking_details && typeof data.booking_details === 'object'
+        ? (data.booking_details as Record<string, unknown>)
+        : null,
     chargeable_weight: data.chargeable_weight != null ? Number(data.chargeable_weight) : null,
     is_chargeable_weight_manual: Boolean(data.is_chargeable_weight_manual),
     manual_chargeable_weight:

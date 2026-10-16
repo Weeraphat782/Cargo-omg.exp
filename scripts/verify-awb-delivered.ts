@@ -17,6 +17,7 @@ import {
   buildDeliveredEmailContent,
   effectiveChargeableKg,
   formatDeliveredTimes,
+  resolveDeliveredParties,
 } from '../src/lib/awb-tracking/delivered-email';
 
 process.env.NEXT_PUBLIC_SITE_URL = 'https://cargo.omgexp.com';
@@ -77,6 +78,8 @@ function makeQuotation(overrides: Partial<QuotationRow> = {}): QuotationRow {
     requested_destination: null,
     customer_name: 'Test',
     company_name: 'Co',
+    consignee_name: 'Consignee Co',
+    booking_details: null,
     chargeable_weight: 100,
     pallets: [{ quantity: 2 }],
     booking_air_freight: { flight_no: 'TG123', booked_date: '2026-09-28' },
@@ -86,11 +89,52 @@ function makeQuotation(overrides: Partial<QuotationRow> = {}): QuotationRow {
 
 assert.equal(effectiveChargeableKg(makeQuotation({ chargeable_weight: 50, is_chargeable_weight_manual: true, manual_chargeable_weight: 200 })), 200);
 
+assert.deepEqual(resolveDeliveredParties(makeQuotation()), {
+  shipper: 'Co',
+  consignee: 'Consignee Co',
+});
+assert.deepEqual(
+  resolveDeliveredParties(
+    makeQuotation({
+      company_name: '',
+      consignee_name: '',
+      booking_details: { shipper: 'AWB Shipper', consignee: 'AWB Consignee' },
+    })
+  ),
+  { shipper: 'AWB Shipper', consignee: 'AWB Consignee' }
+);
+assert.deepEqual(
+  resolveDeliveredParties(makeQuotation({ company_name: null, consignee_name: null, booking_details: null })),
+  { shipper: null, consignee: null }
+);
+
 const logoEmail = buildDeliveredEmailContent({
-  quotation: makeQuotation(),
+  quotation: makeQuotation({ quotation_no: 'OMG10024', company_name: 'Shipper Ltd', consignee_name: 'Buyer AG' }),
   source_url: '',
   delivered_at: '2026-09-30T14:20:00+02:00',
 });
+assert.equal(
+  logoEmail.subject,
+  'Delivered: OMG10024 / AWB 217-1064 8864 (Shipper Ltd -> Buyer AG)'
+);
+assert.match(logoEmail.text, /AWB: 217-1064 8864\nShipper: Shipper Ltd\nConsignee: Buyer AG/);
+assert.match(logoEmail.html, /Shipper<\/td><td[^>]*><strong>Shipper Ltd<\/strong>/);
+assert.match(logoEmail.html, /Consignee<\/td><td[^>]*><strong>Buyer AG<\/strong>/);
+
+const noPartiesEmail = buildDeliveredEmailContent({
+  quotation: makeQuotation({
+    quotation_no: 'OMG10026',
+    company_name: '',
+    consignee_name: '',
+    booking_details: {},
+  }),
+  source_url: '',
+  delivered_at: '2026-09-30T14:20:00+02:00',
+});
+assert.equal(noPartiesEmail.subject, 'Delivered: OMG10026 / AWB 217-1064 8864');
+assert.ok(!noPartiesEmail.text.includes('Shipper:'));
+assert.ok(!noPartiesEmail.text.includes('Consignee:'));
+
 assert.match(logoEmail.html, /<img src="https:\/\/cargo\.omgexp\.com\/email-logo\.png"/);
 assert.match(logoEmail.html, /width="160"/);
 assert.ok(!logoEmail.html.includes('<h1 style="margin:0;font-size:18px;font-weight:600;">OMG Cargo</h1>'));

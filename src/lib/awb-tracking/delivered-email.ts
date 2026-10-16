@@ -82,6 +82,33 @@ function formatFlightLine(q: QuotationRow): string | null {
   }
 }
 
+function trimPartyName(value: string | null | undefined): string | null {
+  const t = value?.trim();
+  return t ? t : null;
+}
+
+function bookingDetailString(details: Record<string, unknown> | null | undefined, key: string): string | null {
+  if (!details || typeof details !== 'object') return null;
+  const raw = details[key];
+  return typeof raw === 'string' ? trimPartyName(raw) : null;
+}
+
+/** Quotation fields first, then booking_details (AWB draft) shipper/consignee. */
+export function resolveDeliveredParties(q: QuotationRow): { shipper: string | null; consignee: string | null } {
+  const shipper =
+    trimPartyName(q.company_name) ?? bookingDetailString(q.booking_details, 'shipper');
+  const consignee =
+    trimPartyName(q.consignee_name) ?? bookingDetailString(q.booking_details, 'consignee');
+  return { shipper, consignee };
+}
+
+function deliveredSubjectPartySuffix(shipper: string | null, consignee: string | null): string {
+  if (shipper && consignee) return ` (${shipper} -> ${consignee})`;
+  if (shipper) return ` (${shipper})`;
+  if (consignee) return ` (${consignee})`;
+  return '';
+}
+
 export function effectiveChargeableKg(q: QuotationRow): number | null {
   if (q.is_chargeable_weight_manual && q.manual_chargeable_weight != null && q.manual_chargeable_weight > 0) {
     return q.manual_chargeable_weight;
@@ -114,12 +141,15 @@ export function buildDeliveredEmailContent(opts: {
     opts.delivered_local_offset ?? q.delivered_local_offset
   );
   const trackLink = opts.source_url?.trim() || '';
+  const { shipper, consignee } = resolveDeliveredParties(q);
 
-  const subject = `Delivered — ${omg || 'Shipment'} / AWB ${awb || '—'}`;
+  const subject = `Delivered: ${omg || 'Shipment'} / AWB ${awb || '—'}${deliveredSubjectPartySuffix(shipper, consignee)}`;
 
   const rows: [string, string][] = [];
   if (omg) rows.push(['OMG number', omg]);
   if (awb) rows.push(['AWB', awb]);
+  if (shipper) rows.push(['Shipper', shipper]);
+  if (consignee) rows.push(['Consignee', consignee]);
   if (routeDest) rows.push(['Route', `${routeOrigin} → ${routeDest}`]);
   if (flight) rows.push(['Flight', flight]);
   if (pallets > 0) rows.push(['Pallets', String(pallets)]);

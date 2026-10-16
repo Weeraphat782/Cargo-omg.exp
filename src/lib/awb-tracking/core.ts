@@ -185,6 +185,8 @@ export type QuotationRow = {
   requested_destination: string | null;
   customer_name: string | null;
   company_name: string | null;
+  consignee_name: string | null;
+  booking_details: Record<string, unknown> | null;
   chargeable_weight: number | null;
   is_chargeable_weight_manual?: boolean;
   manual_chargeable_weight?: number | null;
