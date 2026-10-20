@@ -17,7 +17,10 @@ import {
   type BookingEmailDraft,
   type PackagingType,
 } from '@/lib/mcp/booking-draft';
+import { resolveOpportunityOwnerId } from '@/lib/mcp/opportunity-owner';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+
+export { resolveOpportunityOwnerId };
 import { absoluteUrl } from '@/lib/site';
 import { getFileUrl } from '@/lib/storage';
 import type { DocumentSubmission, Pallet, Quotation } from '@/lib/db';
@@ -92,8 +95,6 @@ export interface ApproveQuotationRef {
   company_name?: string;
 }
 
-const DEFAULT_OPPORTUNITY_OWNER_EMAIL = 'vieww.weeraphat@gmail.com';
-
 export interface ExtractedBookingFields {
   quotation_id: string;
   omg_number: string | null;
@@ -158,31 +159,6 @@ async function ensureBookingShareToken(
     .update({ booking_share_token: token })
     .eq('id', quotationId);
   return error ? null : token;
-}
-
-async function resolveOpportunityOwnerId(
-  supabase: SupabaseClient,
-  ref: { owner_id?: string; owner_email?: string }
-): Promise<string> {
-  if (ref.owner_id?.trim()) return ref.owner_id.trim();
-
-  const email =
-    ref.owner_email?.trim() ||
-    process.env.OPPORTUNITY_OWNER_EMAIL?.trim() ||
-    DEFAULT_OPPORTUNITY_OWNER_EMAIL;
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id')
-    .ilike('email', email)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (data?.id) return data.id;
-
-  throw new Error(
-    'Set OPPORTUNITY_OWNER_EMAIL (or pass owner_email/owner_id) to a staff profile so the Op card shows in the Opportunities UI'
-  );
 }
 
 async function quotationHasDocuments(

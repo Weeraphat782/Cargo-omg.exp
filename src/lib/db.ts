@@ -87,124 +87,29 @@ export interface AdditionalCharge {
   amount: number | string; // Allow string as well for form input
 }
 
-/** Keys: freight, clearance, delivery, additional:<n> (n = index among saved additional_charges). Missing = VAT applies. */
-export type QuotationTaxableLines = Partial<Record<string, boolean>>;
-
-/** Staff form shape; `additional` parallels form `additionalCharges` field array (incl. empty rows). */
-export interface QuotationTaxableLinesForm {
-  freight: boolean;
-  clearance: boolean;
-  delivery: boolean;
-  additional: boolean[];
-}
-
-export const QUOTATION_VAT_RATE = 0.07;
-export const QUOTATION_WHT_RATE = 0.03;
-
-/** Default true when column is null (legacy rows). */
-export function quotationWhtEnabled(wht_enabled: boolean | null | undefined): boolean {
-  return wht_enabled !== false;
-}
-
-function quotationRoundMoney(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-export function quotationLineIsTaxable(taxable_lines: QuotationTaxableLines | null | undefined, key: string): boolean {
-  return taxable_lines?.[key] !== false;
-}
-
-/** Load DB `taxable_lines` into staff form defaults; `additionalChargeCount` = length of form additionalCharges array. */
-export function parseQuotationTaxableLinesToForm(
-  taxable_lines: QuotationTaxableLines | null | undefined,
-  additionalChargeCount: number
-): QuotationTaxableLinesForm {
-  const additional = Array.from({ length: additionalChargeCount }, (_, i) =>
-    quotationLineIsTaxable(taxable_lines, `additional:${i}`)
-  );
-  return {
-    freight: quotationLineIsTaxable(taxable_lines, 'freight'),
-    clearance: quotationLineIsTaxable(taxable_lines, 'clearance'),
-    delivery: quotationLineIsTaxable(taxable_lines, 'delivery'),
-    additional,
-  };
-}
-
-/**
- * Build persisted map from form. Only non-empty additional rows (same filter as save) get keys additional:0..
- */
-export function buildQuotationTaxableLinesFromForm(
-  form: QuotationTaxableLinesForm,
-  additionalCharges: { name?: string; description?: string; amount?: number | string }[]
-): QuotationTaxableLines {
-  const out: QuotationTaxableLines = {};
-  out.freight = form.freight !== false;
-  out.clearance = form.clearance !== false;
-  out.delivery = form.delivery !== false;
-  let dbIdx = 0;
-  additionalCharges.forEach((charge, formIdx) => {
-    const included =
-      (charge.name ?? '').trim() !== '' ||
-      (charge.description ?? '').trim() !== '' ||
-      (Number(charge.amount) || 0) > 0;
-    if (included) {
-      out[`additional:${dbIdx}`] = form.additional?.[formIdx] !== false;
-      dbIdx++;
-    }
-  });
-  return out;
-}
-
-export function computeQuotationVatBreakdown(params: {
-  total_freight_cost: number;
-  clearance_cost: number;
-  delivery_amount: number;
-  additional_amounts: number[];
-  taxable_lines: QuotationTaxableLines | null | undefined;
-  /** Default true — 3% WHT on VAT-taxable subtotal, deducted from grand total. */
-  wht_enabled?: boolean | null;
-}): {
-  vat_base: number;
-  non_vat_base: number;
-  subtotal_pre_vat: number;
-  vat_amount: number;
-  grand_total_with_vat: number;
-  wht_amount: number;
-  net_payable: number;
-} {
-  const tl = params.taxable_lines ?? {};
-  let vatBase = 0;
-  let nonVatBase = 0;
-  const push = (amount: number, taxable: boolean) => {
-    const a = Number(amount) || 0;
-    if (taxable) vatBase += a;
-    else nonVatBase += a;
-  };
-  push(params.total_freight_cost, tl.freight !== false);
-  push(params.clearance_cost, tl.clearance !== false);
-  push(params.delivery_amount, tl.delivery !== false);
-  params.additional_amounts.forEach((amt, i) => {
-    push(amt, tl[`additional:${i}`] !== false);
-  });
-  const vat_base = quotationRoundMoney(vatBase);
-  const non_vat_base = quotationRoundMoney(nonVatBase);
-  const subtotal_pre_vat = quotationRoundMoney(vat_base + non_vat_base);
-  const vat_amount = quotationRoundMoney(vat_base * QUOTATION_VAT_RATE);
-  const grand_total_with_vat = quotationRoundMoney(subtotal_pre_vat + vat_amount);
-  const wht_amount = quotationWhtEnabled(params.wht_enabled)
-    ? quotationRoundMoney(vat_base * QUOTATION_WHT_RATE)
-    : 0;
-  const net_payable = quotationRoundMoney(grand_total_with_vat - wht_amount);
-  return {
-    vat_base,
-    non_vat_base,
-    subtotal_pre_vat,
-    vat_amount,
-    grand_total_with_vat,
-    wht_amount,
-    net_payable,
-  };
-}
+export type {
+  QuotationTaxableLines,
+  QuotationTaxableLinesForm,
+} from '@/lib/quotation-tax';
+export {
+  QUOTATION_VAT_RATE,
+  QUOTATION_WHT_RATE,
+  quotationWhtEnabled,
+  quotationLineIsTaxable,
+  parseQuotationTaxableLinesToForm,
+  buildQuotationTaxableLinesFromForm,
+  computeQuotationVatBreakdown,
+} from '@/lib/quotation-tax';
+import type { QuotationTaxableLines, QuotationTaxableLinesForm } from '@/lib/quotation-tax';
+import {
+  buildQuotationTaxableLinesFromForm,
+  computeQuotationVatBreakdown,
+  parseQuotationTaxableLinesToForm,
+  QUOTATION_WHT_RATE,
+  quotationLineIsTaxable,
+  quotationRoundMoney,
+  quotationWhtEnabled,
+} from '@/lib/quotation-tax';
 
 /** Rows for staff UI: split each charge into VAT vs non-VAT portions. */
 export function getQuotationVatDisplayRows(

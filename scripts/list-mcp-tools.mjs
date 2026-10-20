@@ -1,6 +1,6 @@
 /**
  * Call production (or MCP_URL) tools/list with Bearer MCP_API_TOKEN.
- * ponytail: smoke check only — fails if count != 17 or replace_quotation_document missing.
+ * ponytail: smoke check only — fails if count != 19 or key tools missing.
  */
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -29,8 +29,10 @@ try {
   console.log(`MCP ${url}`);
   console.log(`tools: ${names.length}`);
   for (const n of names) console.log(`  - ${n}`);
-  assert.equal(names.length, 17, `expected 17 tools, got ${names.length}`);
+  assert.equal(names.length, 19, `expected 19 tools, got ${names.length}`);
   assert.ok(names.includes('replace_quotation_document'), 'missing replace_quotation_document');
+  assert.ok(names.includes('create_quotation'), 'missing create_quotation');
+  assert.ok(names.includes('update_quotation'), 'missing update_quotation');
   console.log('verify:mcp-tools: ok');
 } finally {
   await client.close().catch(() => {});

@@ -24,6 +24,7 @@
     "verify:swap-documents": "node scripts/verify-swap-documents.cjs",
     "verify:booking-view": "node scripts/verify-booking-view.cjs",
     "verify:replace-document": "npx tsx scripts/verify-replace-document.ts",
+    "verify:create-quotation": "npx tsx scripts/verify-create-quotation.ts",
     "verify:mcp-tools": "node scripts/list-mcp-tools.mjs"
   },
   "dependencies": {

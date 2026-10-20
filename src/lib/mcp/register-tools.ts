@@ -15,6 +15,12 @@ import {
   updateQuotationNetWeight,
 } from '@/lib/mcp/booking-service';
 import {
+  createQuotation,
+  createQuotationSchema,
+  updateQuotation,
+  updateQuotationSchema,
+} from '@/lib/mcp/create-quotation';
+import {
   getAwbTracking,
   listAwbsToTrack,
   manualResendDelivered,
@@ -301,6 +307,116 @@ const replaceDocSchema = z
     'Provide exactly one of file_base64 or file_url'
   );
 
+const pieceItemSchema = {
+  type: 'object',
+  properties: {
+    length_cm: { type: 'number', exclusiveMinimum: 0 },
+    width_cm: { type: 'number', exclusiveMinimum: 0 },
+    height_cm: { type: 'number', exclusiveMinimum: 0 },
+    gross_weight_kg: { type: 'number', minimum: 0 },
+    qty: { type: 'integer', minimum: 1 },
+  },
+  required: ['length_cm', 'width_cm', 'height_cm', 'gross_weight_kg'],
+  additionalProperties: false,
+} as const;
+
+const createQuotationInputSchema = fromJsonSchema<CreateQuotationInputJson>({
+  type: 'object',
+  properties: {
+    company_name: { type: 'string', description: 'Shipper company name (required)' },
+    shipper_name: { type: 'string' },
+    contact_name: { type: 'string' },
+    contact_email: { type: 'string' },
+    contact_phone: { type: 'string' },
+    consignee_name: { type: 'string' },
+    consignee_address: { type: 'string' },
+    consignee_country: { type: 'string' },
+    destination_id: { type: 'string', description: 'Destination UUID' },
+    destination_iata: { type: 'string', description: 'IATA port code, e.g. ZRH' },
+    pieces: { type: 'array', items: pieceItemSchema, minItems: 1 },
+    net_weight_kg: { type: 'number', minimum: 0 },
+    chargeable_weight: { type: 'number', exclusiveMinimum: 0 },
+    rate_per_kg: { type: 'number', exclusiveMinimum: 0 },
+    commodity: { type: 'string', description: 'Default cannabis' },
+    status: { type: 'string', enum: ['draft', 'pending_approval'] },
+    dry_run: { type: 'boolean' },
+    client_ref: { type: 'string' },
+    create_company: { type: 'boolean' },
+    create_op_card: { type: 'boolean' },
+    internal_remark: { type: 'string' },
+    airline: { type: 'string' },
+    routing: { type: 'string' },
+    origin: { type: 'string' },
+    hs_code: { type: 'string' },
+    packaging: { type: 'string' },
+    preferred_shipment_date: { type: 'string' },
+    phyto_required: { type: 'boolean' },
+  },
+  required: ['company_name', 'pieces'],
+  additionalProperties: false,
+});
+
+type CreateQuotationInputJson = {
+  company_name: string;
+  pieces: {
+    length_cm: number;
+    width_cm: number;
+    height_cm: number;
+    gross_weight_kg: number;
+    qty?: number;
+  }[];
+  destination_id?: string;
+  destination_iata?: string;
+  dry_run?: boolean;
+  client_ref?: string;
+  create_company?: boolean;
+  create_op_card?: boolean;
+  [key: string]: unknown;
+};
+
+const updateQuotationInputSchema = fromJsonSchema<UpdateQuotationInputJson>({
+  type: 'object',
+  properties: {
+    quotation_id: { type: 'string' },
+    omg_number: { type: 'string' },
+    dry_run: { type: 'boolean' },
+    company_name: { type: 'string' },
+    shipper_name: { type: 'string' },
+    contact_name: { type: 'string' },
+    contact_email: { type: 'string' },
+    contact_phone: { type: 'string' },
+    consignee_name: { type: 'string' },
+    consignee_address: { type: 'string' },
+    consignee_country: { type: 'string' },
+    destination_id: { type: 'string' },
+    destination_iata: { type: 'string' },
+    pieces: { type: 'array', items: pieceItemSchema },
+    net_weight_kg: { type: 'number', minimum: 0 },
+    chargeable_weight: { type: 'number', exclusiveMinimum: 0 },
+    rate_per_kg: { type: 'number', exclusiveMinimum: 0 },
+    commodity: { type: 'string' },
+    status: { type: 'string', enum: ['draft', 'pending_approval'] },
+    internal_remark: { type: 'string' },
+    airline: { type: 'string' },
+    routing: { type: 'string' },
+    origin: { type: 'string' },
+    hs_code: { type: 'string' },
+    packaging: { type: 'string' },
+    preferred_shipment_date: { type: 'string' },
+    phyto_required: { type: 'boolean' },
+  },
+  additionalProperties: false,
+});
+
+type UpdateQuotationInputJson = {
+  quotation_id?: string;
+  omg_number?: string;
+  dry_run?: boolean;
+  net_weight_kg?: number;
+  pieces?: CreateQuotationInputJson['pieces'];
+  [key: string]: unknown;
+};
+
 const markSchema = refSchema.and(
   z.object({ drafted_by: z.string().optional() })
 );
@@ -425,6 +541,48 @@ export function registerBookingTools(server: McpServer): void {
       const docs = await getQuotationDocuments(ref);
       if (!docs) return jsonText({ error: 'Quotation not found.' });
       return jsonText(docs);
+    }
+  );
+
+  server.registerTool(
+    'create_quotation',
+    {
+      description:
+        'Create a draft quotation like staff New Quotation: company match (or create_company), freight from rate table, OMG number from DB trigger. dry_run validates only. client_ref is idempotent. Optional create_op_card; emits quotation.created once on insert.',
+      inputSchema: createQuotationInputSchema,
+    },
+    async (args) => {
+      try {
+        const parsed = parseOrThrow(createQuotationSchema, args);
+        const result = await createQuotation(parsed);
+        return jsonText(result);
+      } catch (err) {
+        return jsonText({
+          ok: false,
+          error: err instanceof Error ? err.message : 'Create failed',
+        });
+      }
+    }
+  );
+
+  server.registerTool(
+    'update_quotation',
+    {
+      description:
+        'Update an existing quotation by id or OMG#. Recomputes freight when pricing inputs change; returns pricing_before/after. dry_run previews only. Rejects Lose Case. Logs quotation_updated activity.',
+      inputSchema: updateQuotationInputSchema,
+    },
+    async (args) => {
+      try {
+        const parsed = parseOrThrow(updateQuotationSchema, args);
+        const result = await updateQuotation(parsed);
+        return jsonText(result);
+      } catch (err) {
+        return jsonText({
+          ok: false,
+          error: err instanceof Error ? err.message : 'Update failed',
+        });
+      }
     }
   );
 
