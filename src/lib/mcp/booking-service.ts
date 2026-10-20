@@ -327,7 +327,15 @@ export async function getQuotationDocuments(ref: {
   const includeSuperseded = ref.include_superseded === true;
   const docs = await listQuotationDocumentRows(supabase, quotation.id, includeSuperseded);
 
-  const attachments = await Promise.all(docs.map((doc) => attachmentFromDocumentRow(doc)));
+  const { attachmentWithMissingFlag } = await import('@/lib/mcp/quotation-document-mcp');
+  const attachments = await Promise.all(
+    docs.map((doc) =>
+      attachmentWithMissingFlag(doc, async (d) => {
+        const row = await attachmentFromDocumentRow(d);
+        return row.download_url;
+      })
+    )
+  );
   return {
     quotation_id: quotation.id,
     omg_number: quotation.quotation_no,

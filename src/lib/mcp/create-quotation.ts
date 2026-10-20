@@ -746,15 +746,16 @@ export function buildCreateQuotationDeps(supabase: SupabaseClient): CreateQuotat
         return data as DestinationRow;
       }
       const iata = ref.destination_iata!.trim().toUpperCase();
-      const { data, error } = await supabase
-        .from('destinations')
-        .select('id, country, port')
-        .ilike('port', iata)
-        .limit(2);
+      const { data, error } = await supabase.from('destinations').select('id, country, port');
       if (error) throw new Error(error.message);
-      if (!data?.length) throw new Error(`Unknown destination IATA: ${iata}`);
-      if (data.length > 1) throw new Error(`Ambiguous destination IATA: ${iata}`);
-      return data[0] as DestinationRow;
+      const exact = (data ?? []).filter((d) => {
+        const p = (d.port || '').trim();
+        if (!p || p.includes(',') || /dead/i.test(p)) return false;
+        return p.toUpperCase() === iata;
+      });
+      if (exact.length === 1) return exact[0] as DestinationRow;
+      if (!exact.length) throw new Error(`Unknown destination IATA: ${iata}`);
+      throw new Error(`Ambiguous destination IATA: ${iata}`);
     },
     loadFreightRates: async () => {
       const { data, error } = await supabase.from('freight_rates').select('*');

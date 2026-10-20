@@ -39,6 +39,7 @@ function makeDeps(overrides: Partial<ReplaceDocumentDeps> = {}): TestReplaceDeps
   let docsUploadedFired = false;
 
   const base: ReplaceDocumentDeps = {
+    loadDocumentById: async (id) => docs.get(id) ?? null,
     loadQuotation: async (ref) => {
       if (ref.quotation_id === 'q1' || ref.omg_number === 'OMG10074') return { ...Q };
       if (ref.omg_number === 'OMG99999') return null;
@@ -80,7 +81,7 @@ function makeDeps(overrides: Partial<ReplaceDocumentDeps> = {}): TestReplaceDeps
     resolvePublicUrl: async () => 'https://signed.example/new.pdf',
     emitReplaced: async (payload) => {
       webhookEvent = 'quotation.docs_replaced';
-      assert.equal(payload.doc_type, 'packing_list');
+      assert.equal(payload.doc_type, 'packing-list');
       assert.equal(payload.omg_number, 'OMG10074');
     },
   };

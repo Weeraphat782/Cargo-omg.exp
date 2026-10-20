@@ -9,7 +9,7 @@ const handler = createMcpHandler(
     registerBookingTools(server);
   },
   {
-    serverInfo: { name: 'omgexp-booking', version: '1.0.0' },
+    serverInfo: { name: 'omgexp-booking', version: '1.2.0' },
     verboseLogs: process.env.NODE_ENV !== 'production',
   }
 );

@@ -29,10 +29,14 @@ try {
   console.log(`MCP ${url}`);
   console.log(`tools: ${names.length}`);
   for (const n of names) console.log(`  - ${n}`);
-  assert.equal(names.length, 19, `expected 19 tools, got ${names.length}`);
+  assert.equal(names.length, 23, `expected 23 tools, got ${names.length}`);
   assert.ok(names.includes('replace_quotation_document'), 'missing replace_quotation_document');
   assert.ok(names.includes('create_quotation'), 'missing create_quotation');
   assert.ok(names.includes('update_quotation'), 'missing update_quotation');
+  assert.ok(names.includes('list_document_types'), 'missing list_document_types');
+  assert.ok(names.includes('upload_quotation_document'), 'missing upload_quotation_document');
+  assert.ok(names.includes('delete_quotation_document'), 'missing delete_quotation_document');
+  assert.ok(names.includes('get_quotation_pdf'), 'missing get_quotation_pdf');
   console.log('verify:mcp-tools: ok');
 } finally {
   await client.close().catch(() => {});

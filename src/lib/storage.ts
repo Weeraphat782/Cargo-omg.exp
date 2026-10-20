@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { CommodityType } from '@/lib/document-presets';
-import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // Cloudflare R2 Client Configuration
@@ -15,6 +15,16 @@ export const r2Client = new S3Client({
 });
 
 export const R2_BUCKET = process.env.R2_DOCS_BUCKET_NAME || 'documents';
+
+export async function r2ObjectExists(key: string): Promise<boolean> {
+  if (typeof window !== 'undefined' || !key?.trim()) return false;
+  try {
+    await r2Client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * อัปโหลดไฟล์ไปยัง Supabase Storage

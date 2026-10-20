@@ -26,7 +26,7 @@ Run migrations: `Tr/migrations/012_add_booking_email_drafted.sql`, `Tr/migration
 
 ## MCP tools
 
-The server registers **17 tools** in [`register-tools.ts`](../src/lib/mcp/register-tools.ts). There is no hardcoded tools list or cache — each MCP session gets `tools/list` from live registration. If a client shows **16 tools**, it is usually a **stale session** (tools cached before deploy `276ee91`) or bot instructions copied from an old doc. Reconnect to `https://cargo.omgexp.com/api/mcp` with `Authorization: Bearer $MCP_API_TOKEN` (Vercel Production env **`MCP_API_TOKEN`**) and call `tools/list` again.
+The server registers **23 tools** in [`register-tools.ts`](../src/lib/mcp/register-tools.ts) (`omgexp-booking` **v1.2.0**). There is no hardcoded tools list or cache — each MCP session gets `tools/list` from live registration. If a client shows an old count (e.g. 17), start a **new MCP session** after deploy (same server name but version **1.2.0**). Reconnect to `https://cargo.omgexp.com/api/mcp` with `Authorization: Bearer $MCP_API_TOKEN` and call `tools/list` again.
 
 Verify from your machine (token from Vercel → Settings → Environment Variables → Production):
 

@@ -3,7 +3,13 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 
-const MAX_FILE_BYTES = 15 * 1024 * 1024;
+import { resolveDocumentTypeMeta } from '@/lib/mcp/document-catalog';
+import {
+  assertAllowedUploadFilename,
+  guessContentTypeFromFilename,
+  loadMcpDocumentBytes,
+} from '@/lib/mcp/mcp-document-bytes';
+
 const R2_BUCKET = process.env.R2_DOCS_BUCKET_NAME || 'documents';
 
 export const REPLACE_DOC_TYPES = {
@@ -40,10 +46,12 @@ export function isCurrentDocumentRow(row: { superseded_at?: string | null }): bo
 export interface ReplaceQuotationDocumentInput {
   quotation_id?: string;
   omg_number?: string;
-  doc_type: string;
+  document_id?: string;
+  doc_type?: string;
   file_base64?: string;
   file_url?: string;
   filename: string;
+  dry_run?: boolean;
   actor?: string;
 }
 
@@ -51,10 +59,14 @@ export interface ReplaceQuotationDocumentSuccess {
   ok: true;
   quotation_id: string;
   omg_number: string | null;
-  doc_type: ReplaceDocTypeInput;
+  doc_type: string;
+  document_type: string;
   new_document_id: string;
   new_url: string;
   old_document_id: string | null;
+  old_file_name: string | null;
+  new_file_name: string;
+  dry_run?: boolean;
   suggestions?: {
     net_weight_kg: null;
     pallets: null;
@@ -90,6 +102,7 @@ export type DocumentRow = {
 };
 
 export type ReplaceDocumentDeps = {
+  loadDocumentById: (id: string) => Promise<DocumentRow | null>;
   loadQuotation: (ref: {
     quotation_id?: string;
     omg_number?: string;
@@ -125,54 +138,31 @@ function extensionFromFilename(name: string): string {
   return i >= 0 ? name.slice(i) : '';
 }
 
-function guessContentType(filename: string): string {
-  const ext = extensionFromFilename(filename).toLowerCase();
-  const map: Record<string, string> = {
-    '.pdf': 'application/pdf',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.webp': 'image/webp',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    '.xls': 'application/vnd.ms-excel',
-    '.doc': 'application/msword',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  };
-  return map[ext] || 'application/octet-stream';
-}
-
-async function loadFileBytes(input: ReplaceQuotationDocumentInput): Promise<Uint8Array> {
-  const hasB64 = Boolean(input.file_base64?.trim());
-  const hasUrl = Boolean(input.file_url?.trim());
-  if (hasB64 === hasUrl) {
-    throw new Error('Provide exactly one of file_base64 or file_url.');
-  }
-  if (hasB64) {
-    const buf = Buffer.from(input.file_base64!.trim(), 'base64');
-    if (buf.length > MAX_FILE_BYTES) throw new Error('File exceeds 15 MB limit.');
-    return new Uint8Array(buf);
-  }
-  const url = input.file_url!.trim();
-  if (!url.startsWith('https://')) throw new Error('file_url must be a public https URL.');
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch file_url: ${res.status}`);
-  const arr = new Uint8Array(await res.arrayBuffer());
-  if (arr.length > MAX_FILE_BYTES) throw new Error('File exceeds 15 MB limit.');
-  return arr;
+function mcpPayload(extra: Record<string, unknown>) {
+  return { source: 'mcp', ...extra };
 }
 
 export async function replaceQuotationDocumentCore(
   input: ReplaceQuotationDocumentInput,
   deps: ReplaceDocumentDeps
 ): Promise<ReplaceQuotationDocumentSuccess> {
-  const docType = parseReplaceDocType(input.doc_type);
-  if (!docType) throw new Error('Unknown doc_type. Use packing_list, commercial_invoice, phyto, or other.');
-
   const qid = input.quotation_id?.trim();
   const omg = input.omg_number?.trim();
-  if (!qid && !omg) throw new Error('Provide quotation_id or omg_number.');
+  const documentId = input.document_id?.trim();
+  if (!qid && !omg && !documentId) {
+    throw new Error('Provide quotation_id, omg_number, or document_id.');
+  }
 
-  const quotation = await deps.loadQuotation({ quotation_id: qid, omg_number: omg });
+  let targetRow: DocumentRow | null = null;
+  if (documentId) {
+    targetRow = await deps.loadDocumentById(documentId);
+    if (!targetRow) throw new Error('Document not found.');
+  }
+
+  const quotation = await deps.loadQuotation({
+    quotation_id: qid || targetRow?.quotation_id,
+    omg_number: omg,
+  });
   if (!quotation) throw new Error('Quotation not found.');
 
   if (qid && omg && quotation.quotation_no !== omg) {
@@ -184,14 +174,48 @@ export async function replaceQuotationDocumentCore(
   }
 
   if (!input.filename?.trim()) throw new Error('filename is required.');
+  assertAllowedUploadFilename(input.filename.trim());
 
-  const meta = REPLACE_DOC_TYPES[docType];
-  const bytes = await loadFileBytes(input);
-  const contentType = guessContentType(input.filename);
+  if (targetRow && targetRow.quotation_id !== quotation.id) {
+    throw new Error('document_id does not belong to this quotation.');
+  }
+
+  let meta = input.doc_type ? resolveDocumentTypeMeta(input.doc_type) : null;
+  if (targetRow && !meta) {
+    meta = resolveDocumentTypeMeta(targetRow.document_type);
+  }
+  if (!meta && input.doc_type) meta = resolveDocumentTypeMeta(input.doc_type);
+  if (!targetRow && !input.doc_type?.trim()) {
+    throw new Error('doc_type is required when document_id is not set.');
+  }
+  if (!meta) {
+    throw new Error('Unknown doc_type. Call list_document_types or pass document_id.');
+  }
+
+  const bytes = await loadMcpDocumentBytes(input);
+  const contentType = guessContentTypeFromFilename(input.filename);
+  const newFileName = input.filename.trim();
+
+  if (input.dry_run) {
+    return {
+      ok: true,
+      dry_run: true,
+      quotation_id: quotation.id,
+      omg_number: quotation.quotation_no,
+      doc_type: meta.slug,
+      document_type: meta.slug,
+      new_document_id: '',
+      new_url: '',
+      old_document_id: targetRow?.id ?? null,
+      old_file_name: targetRow ? targetRow.original_file_name || targetRow.file_name : null,
+      new_file_name: newFileName,
+    };
+  }
+
   const filePath = await deps.uploadBytes({
     quotationId: quotation.id,
     documentTypeSlug: meta.slug,
-    filename: input.filename.trim(),
+    filename: newFileName,
     bytes,
     contentType,
   });
@@ -201,8 +225,8 @@ export async function replaceQuotationDocumentCore(
     quotation_id: quotation.id,
     document_type: meta.slug,
     document_type_name: meta.name,
-    file_name: input.filename.trim(),
-    original_file_name: input.filename.trim(),
+    file_name: newFileName,
+    original_file_name: newFileName,
     file_path: filePath,
     file_url: '',
     company_name: companyName,
@@ -210,15 +234,26 @@ export async function replaceQuotationDocumentCore(
     status: 'submitted',
   });
 
-  const existing = await deps.listCurrentByQuotation(quotation.id);
-  const toSupersede = existing.filter(
-    (d) => d.id !== newRow.id && docTypeMatchesReplaceTarget(meta.slug, d.document_type)
-  );
-  const oldLatest =
-    toSupersede.sort(
-      (a, b) =>
-        new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
-    )[0]?.id ?? null;
+  let toSupersede: DocumentRow[] = [];
+  let oldLatest: string | null = null;
+  let oldFileName: string | null = null;
+
+  if (targetRow) {
+    toSupersede = [targetRow];
+    oldLatest = targetRow.id;
+    oldFileName = targetRow.original_file_name || targetRow.file_name;
+  } else {
+    const existing = await deps.listCurrentByQuotation(quotation.id);
+    toSupersede = existing.filter(
+      (d) => d.id !== newRow.id && docTypeMatchesReplaceTarget(meta!.slug, d.document_type)
+    );
+    oldLatest =
+      toSupersede.sort(
+        (a, b) =>
+          new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
+      )[0]?.id ?? null;
+    oldFileName = toSupersede[0]?.original_file_name || toSupersede[0]?.file_name || null;
+  }
 
   if (toSupersede.length) {
     await deps.supersedeRows(
@@ -232,7 +267,7 @@ export async function replaceQuotationDocumentCore(
     id: newRow.id,
     quotation_id: quotation.id,
     document_type: meta.slug,
-    file_name: input.filename.trim(),
+    file_name: newFileName,
     file_path: filePath,
     file_url: '',
     storage_provider: 'r2',
@@ -243,20 +278,22 @@ export async function replaceQuotationDocumentCore(
     quotation_id: quotation.id,
     event: 'document_replaced',
     actor: input.actor || 'mcp',
-    payload: {
+    payload: mcpPayload({
       omg_number: quotation.quotation_no,
-      doc_type: docType,
+      doc_type: meta.slug,
       document_type_slug: meta.slug,
       new_document_id: newRow.id,
       old_document_ids: toSupersede.map((d) => d.id),
+      old_file_name: oldFileName,
+      new_file_name: newFileName,
       new_url,
-    },
+    }),
   });
 
   await deps.emitReplaced({
     quotation_id: quotation.id,
     omg_number: quotation.quotation_no,
-    doc_type: docType,
+    doc_type: meta.slug,
     new_url,
   });
 
@@ -264,13 +301,16 @@ export async function replaceQuotationDocumentCore(
     ok: true,
     quotation_id: quotation.id,
     omg_number: quotation.quotation_no,
-    doc_type: docType,
+    doc_type: meta.slug,
+    document_type: meta.slug,
     new_document_id: newRow.id,
     new_url,
     old_document_id: oldLatest,
+    old_file_name: oldFileName,
+    new_file_name: newFileName,
   };
 
-  if (docType === 'packing_list') {
+  if (meta.slug === 'packing-list') {
     result.suggestions = {
       net_weight_kg: null,
       pallets: null,
@@ -293,7 +333,7 @@ function r2Client(): S3Client {
   });
 }
 
-async function uploadToDocsR2(
+export async function uploadToDocsR2(
   quotationId: string,
   documentTypeSlug: string,
   filename: string,
@@ -316,6 +356,15 @@ async function uploadToDocsR2(
 
 export function buildReplaceDocumentDeps(supabase: SupabaseClient): ReplaceDocumentDeps {
   return {
+    loadDocumentById: async (id) => {
+      const { data, error } = await supabase
+        .from('document_submissions')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data as DocumentRow | null;
+    },
     loadQuotation: async (ref) => {
       if (ref.quotation_id) {
         const { data, error } = await supabase

@@ -21,6 +21,12 @@ import {
   updateQuotationSchema,
 } from '@/lib/mcp/create-quotation';
 import {
+  deleteQuotationDocument,
+  listMcpDocumentTypes,
+  uploadQuotationDocument,
+} from '@/lib/mcp/quotation-document-mcp';
+import { getQuotationPdf } from '@/lib/mcp/quotation-pdf';
+import {
   getAwbTracking,
   listAwbsToTrack,
   manualResendDelivered,
@@ -271,24 +277,28 @@ const docsRefSchema = z
 const replaceDocInputSchema = fromJsonSchema<{
   quotation_id?: string;
   omg_number?: string;
-  doc_type: string;
+  document_id?: string;
+  doc_type?: string;
   file_base64?: string;
   file_url?: string;
   filename: string;
+  dry_run?: boolean;
 }>({
   type: 'object',
   properties: {
     quotation_id: { type: 'string', description: 'Quotation UUID' },
     omg_number: { type: 'string', description: 'OMG number, e.g. OMG10074' },
+    document_id: { type: 'string', description: 'Replace this exact document row in place' },
     doc_type: {
       type: 'string',
-      enum: ['packing_list', 'commercial_invoice', 'phyto', 'other'],
+      description: 'Document type key from list_document_types (required if document_id omitted)',
     },
-    file_base64: { type: 'string', description: 'Base64 file content (use file_url OR this)' },
-    file_url: { type: 'string', description: 'Public https URL to fetch file (use file_base64 OR this)' },
+    file_base64: { type: 'string', description: 'Base64 PDF/JPG/PNG (use file_url OR this)' },
+    file_url: { type: 'string', description: 'Public https URL (use file_base64 OR this)' },
     filename: { type: 'string', description: 'Original filename including extension' },
+    dry_run: { type: 'boolean' },
   },
-  required: ['doc_type', 'filename'],
+  required: ['filename'],
   additionalProperties: false,
 });
 
@@ -296,12 +306,15 @@ const replaceDocSchema = z
   .object({
     quotation_id: z.string().uuid().optional(),
     omg_number: z.string().min(1).optional(),
-    doc_type: z.enum(['packing_list', 'commercial_invoice', 'phyto', 'other']),
+    document_id: z.string().uuid().optional(),
+    doc_type: z.string().min(1).optional(),
     file_base64: z.string().optional(),
     file_url: z.string().url().optional(),
     filename: z.string().min(1),
+    dry_run: z.boolean().optional(),
   })
-  .refine((a) => a.quotation_id || a.omg_number, 'Provide quotation_id or omg_number')
+  .refine((a) => a.quotation_id || a.omg_number || a.document_id, 'Provide quotation_id, omg_number, or document_id')
+  .refine((a) => Boolean(a.document_id?.trim()) || Boolean(a.doc_type?.trim()), 'Provide doc_type when document_id is omitted')
   .refine(
     (a) => Boolean(a.file_base64?.trim()) !== Boolean(a.file_url?.trim()),
     'Provide exactly one of file_base64 or file_url'
@@ -530,10 +543,99 @@ export function registerBookingTools(server: McpServer): void {
   );
 
   server.registerTool(
+    'list_document_types',
+    {
+      description:
+        'All document type keys and labels the staff UI supports (commodity presets, GACP, phyto, AWB, ใบขน). Use document_type keys on upload and replace.',
+      inputSchema: fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+    },
+    async () => jsonText({ types: listMcpDocumentTypes() })
+  );
+
+  server.registerTool(
+    'upload_quotation_document',
+    {
+      description:
+        'Upload PDF/JPG/PNG (max 20MB) to quotation storage. document_type from list_document_types. dry_run validates only. AWB and customs_declaration update quotation columns like the shipping panel.',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          quotation_id: { type: 'string' },
+          omg_number: { type: 'string' },
+          document_type: { type: 'string' },
+          file_name: { type: 'string' },
+          file_base64: { type: 'string' },
+          file_url: { type: 'string' },
+          notes: { type: 'string' },
+          dry_run: { type: 'boolean' },
+        },
+        required: ['document_type', 'file_name'],
+        additionalProperties: false,
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonText(await uploadQuotationDocument(args as Parameters<typeof uploadQuotationDocument>[0]));
+      } catch (err) {
+        return jsonText({ ok: false, error: err instanceof Error ? err.message : 'Upload failed' });
+      }
+    }
+  );
+
+  server.registerTool(
+    'delete_quotation_document',
+    {
+      description: 'Delete a document_submissions row and its storage file. Optional quotation_id safety check. dry_run previews.',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          document_id: { type: 'string' },
+          quotation_id: { type: 'string' },
+          dry_run: { type: 'boolean' },
+        },
+        required: ['document_id'],
+        additionalProperties: false,
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonText(await deleteQuotationDocument(args as Parameters<typeof deleteQuotationDocument>[0]));
+      } catch (err) {
+        return jsonText({ ok: false, error: err instanceof Error ? err.message : 'Delete failed' });
+      }
+    }
+  );
+
+  server.registerTool(
+    'get_quotation_pdf',
+    {
+      description:
+        'Generate the customer quotation PDF (same pricing/VAT as print preview). Returns signed download URL (~1h) and file_name Quotation_OMG##_Company.pdf. Optional include_base64.',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          quotation_id: { type: 'string' },
+          omg_number: { type: 'string' },
+          include_base64: { type: 'boolean' },
+          dry_run: { type: 'boolean' },
+        },
+        additionalProperties: false,
+      }),
+    },
+    async (args) => {
+      try {
+        return jsonText(await getQuotationPdf(args as Parameters<typeof getQuotationPdf>[0]));
+      } catch (err) {
+        return jsonText({ ok: false, error: err instanceof Error ? err.message : 'PDF failed' });
+      }
+    }
+  );
+
+  server.registerTool(
     'get_quotation_documents',
     {
       description:
-        'List customer documents with signed download URLs. Default: current versions only. Set include_superseded=true for replaced history.',
+        'List customer documents with signed download URLs. Flags file_missing when storage 404. Default: current versions only. Set include_superseded=true for replaced history.',
       inputSchema: docsRefInputSchema,
     },
     async (args) => {
@@ -590,7 +692,7 @@ export function registerBookingTools(server: McpServer): void {
     'replace_quotation_document',
     {
       description:
-        'Replace the current packing list, commercial invoice, phyto, or other document on a quotation (by OMG#). Supersedes the old file, logs activity, emits quotation.docs_replaced (not docs_uploaded). Rejects Lose Case.',
+        'Replace a quotation document in place: pass document_id for that row, or doc_type from list_document_types. PDF/JPG/PNG max 20MB. Returns old_file_name and new_file_name. dry_run supported. Rejects Lose Case.',
       inputSchema: replaceDocInputSchema,
     },
     async (args) => {
