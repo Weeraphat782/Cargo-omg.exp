@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import type { EmailBookingData } from '@/lib/email-templates';
+import { resolveCustomerFacingShipper } from '@/lib/awb-tracking/delivered-email';
 import type { Pallet } from '@/lib/db';
 import JSZip from 'jszip';
 import { toast } from 'sonner';
@@ -211,6 +212,7 @@ export function BookingSheet({ token, readOnly }: { token: string; readOnly: boo
 
   const q = payload?.quotation;
   const details = (q?.booking_details || {}) as EmailBookingData;
+  const shipperDisplay = q ? resolveCustomerFacingShipper(q) : null;
 
   const palletRows = useMemo(() => {
     const pallets = q?.pallets || [];
@@ -447,7 +449,7 @@ export function BookingSheet({ token, readOnly }: { token: string; readOnly: boo
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
               {q.quotation_no || q.id.slice(0, 8)}
             </h1>
-            <p className="text-blue-100/90 font-medium mt-1 truncate">{q.company_name}</p>
+            <p className="text-blue-100/90 font-medium mt-1 truncate">{shipperDisplay || '—'}</p>
             {q.destination && (
               <span className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full bg-white/15 text-sm font-medium">
                 <MapPin className="w-3.5 h-3.5" />
@@ -504,7 +506,7 @@ export function BookingSheet({ token, readOnly }: { token: string; readOnly: boo
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           <div className="space-y-6">
             <SectionCard title="Shipment" icon={MapPin}>
-              <DefItem label="Shipper" value={q.company_name} icon={User} />
+              <DefItem label="Shipper" value={shipperDisplay} icon={User} />
               <DefItem label="Contact" value={q.contact_person || q.customer_name} icon={User} />
               <DefItem label="Destination" value={q.destination} icon={MapPin} />
             </SectionCard>

@@ -90,26 +90,45 @@ function makeQuotation(overrides: Partial<QuotationRow> = {}): QuotationRow {
 assert.equal(effectiveChargeableKg(makeQuotation({ chargeable_weight: 50, is_chargeable_weight_manual: true, manual_chargeable_weight: 200 })), 200);
 
 assert.deepEqual(resolveDeliveredParties(makeQuotation()), {
-  shipper: 'Co',
+  shipper: 'Test',
   consignee: 'Consignee Co',
 });
 assert.deepEqual(
   resolveDeliveredParties(
     makeQuotation({
-      company_name: '',
+      customer_name: 'THE GREENROOM CO., LTD.',
+      company_name: 'CZW PHARMA S.R.O.',
+      consignee_name: 'CZW PHARMA S.R.O.',
+      booking_details: { shipper: 'AWB Shipper', consignee: 'AWB Consignee' },
+    })
+  ),
+  { shipper: 'THE GREENROOM CO., LTD.', consignee: 'CZW PHARMA S.R.O.' }
+);
+assert.deepEqual(
+  resolveDeliveredParties(
+    makeQuotation({
+      customer_name: '',
+      company_name: 'Fallback Co',
       consignee_name: '',
       booking_details: { shipper: 'AWB Shipper', consignee: 'AWB Consignee' },
     })
   ),
-  { shipper: 'AWB Shipper', consignee: 'AWB Consignee' }
+  { shipper: 'Fallback Co', consignee: 'AWB Consignee' }
 );
 assert.deepEqual(
-  resolveDeliveredParties(makeQuotation({ company_name: null, consignee_name: null, booking_details: null })),
+  resolveDeliveredParties(
+    makeQuotation({ customer_name: null, company_name: null, consignee_name: null, booking_details: null })
+  ),
   { shipper: null, consignee: null }
 );
 
 const logoEmail = buildDeliveredEmailContent({
-  quotation: makeQuotation({ quotation_no: 'OMG10024', company_name: 'Shipper Ltd', consignee_name: 'Buyer AG' }),
+  quotation: makeQuotation({
+    quotation_no: 'OMG10024',
+    customer_name: 'Shipper Ltd',
+    company_name: 'Wrong Consignee Name',
+    consignee_name: 'Buyer AG',
+  }),
   source_url: '',
   delivered_at: '2026-09-30T14:20:00+02:00',
 });
@@ -124,6 +143,7 @@ assert.match(logoEmail.html, /Consignee<\/td><td[^>]*><strong>Buyer AG<\/strong>
 const noPartiesEmail = buildDeliveredEmailContent({
   quotation: makeQuotation({
     quotation_no: 'OMG10026',
+    customer_name: '',
     company_name: '',
     consignee_name: '',
     booking_details: {},

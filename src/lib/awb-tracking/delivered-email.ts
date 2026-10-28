@@ -93,10 +93,17 @@ function bookingDetailString(details: Record<string, unknown> | null | undefined
   return typeof raw === 'string' ? trimPartyName(raw) : null;
 }
 
-/** Quotation fields first, then booking_details (AWB draft) shipper/consignee. */
+/** Customer-facing shipper: customer_name, else company_name snapshot (never company_id join). */
+export function resolveCustomerFacingShipper(q: {
+  customer_name?: string | null;
+  company_name?: string | null;
+}): string | null {
+  return trimPartyName(q.customer_name) ?? trimPartyName(q.company_name);
+}
+
+/** Delivered email / resend: shipper from customer_name; consignee from consignee_name. */
 export function resolveDeliveredParties(q: QuotationRow): { shipper: string | null; consignee: string | null } {
-  const shipper =
-    trimPartyName(q.company_name) ?? bookingDetailString(q.booking_details, 'shipper');
+  const shipper = resolveCustomerFacingShipper(q);
   const consignee =
     trimPartyName(q.consignee_name) ?? bookingDetailString(q.booking_details, 'consignee');
   return { shipper, consignee };
