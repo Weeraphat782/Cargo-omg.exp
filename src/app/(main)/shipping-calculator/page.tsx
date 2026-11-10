@@ -971,7 +971,19 @@ export default function ShippingCalculatorPage() {
                   </TableCell>
                 )}
                 {isColumnVisible('customer') && <TableCell className="text-xs sm:text-sm">{quotation.customer_name || '-'}</TableCell>}
-                {isColumnVisible('consignee') && <TableCell className="text-xs sm:text-sm">{quotation.consignee_name || '-'}</TableCell>}
+                {isColumnVisible('consignee') && (
+                  <TableCell className="text-xs sm:text-sm">
+                    <div className="max-w-[240px] sm:max-w-[280px]">
+                      {quotation.consignee_name ? (
+                        <div className="truncate" title={quotation.consignee_name}>
+                          {quotation.consignee_name}
+                        </div>
+                      ) : (
+                        '-'
+                      )}
+                    </div>
+                  </TableCell>
+                )}
                 {isColumnVisible('destination') && (
                   <TableCell className="text-xs sm:text-sm">
                     <div className="max-w-[240px] sm:max-w-[280px]">
