@@ -1509,27 +1509,37 @@ export async function deleteQuotation(id: string) {
 
 // DOCUMENT SUBMISSION FUNCTIONS
 export async function getDocumentSubmissions(quotationId?: string) {
+  // ponytail: PostgREST caps at 1k rows/request; paginate until empty. Server-side grouping if this grows huge.
+  const PAGE = 1000;
+  const all: DocumentSubmission[] = [];
   try {
-    let query = supabase
-      .from('document_submissions')
-      .select('*')
-      .order('submitted_at', { ascending: false });
+    for (let from = 0; ; from += PAGE) {
+      let query = supabase
+        .from('document_submissions')
+        .select('*')
+        .order('submitted_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
 
-    if (quotationId) {
-      query = query.eq('quotation_id', quotationId).is('superseded_at', null);
+      if (quotationId) {
+        query = query.eq('quotation_id', quotationId).is('superseded_at', null);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching document submissions:', error);
+        break;
+      }
+
+      all.push(...((data as DocumentSubmission[]) || []));
+      if (!data || data.length < PAGE) break;
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Error fetching document submissions:', error);
-      return [];
-    }
-
-    return data as DocumentSubmission[];
+    return all;
   } catch (error) {
     console.error('Error in getDocumentSubmissions:', error);
-    return [];
+    return all;
   }
 }
 
