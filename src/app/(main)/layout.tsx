@@ -17,7 +17,7 @@ function StaffRouteGuard({ children }: { children: ReactNode }) {
     if (authLoading) return;
 
     if (!user) {
-      window.location.href = '/login';
+      window.location.href = '/login?reason=session';
       return;
     }
 
@@ -48,7 +48,7 @@ function StaffRouteGuard({ children }: { children: ReactNode }) {
         setAuthorized(true);
         setChecking(false);
       } catch {
-        if (!cancelled) window.location.href = '/login';
+        if (!cancelled) window.location.href = '/login?reason=session';
       }
     };
 

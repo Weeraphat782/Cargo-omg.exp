@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { Pagination } from '@/components/ui/pagination';
 import { usePagination, type UsePaginationResult } from '@/hooks/use-pagination';
+import { useAuth } from '@/contexts/auth-context';
 
 type DateFilterField = 'created_at' | 'pickup_date';
 
@@ -69,9 +70,9 @@ const DEFAULT_VISIBLE_COLUMNS: ColumnId[] = ALL_COLUMNS.filter(c => c.default).m
 
 export default function ShippingCalculatorPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [authChecked, setAuthChecked] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [dateField, setDateField] = useState<DateFilterField>('created_at');
   const [dateFrom, setDateFrom] = useState('');
@@ -158,14 +159,7 @@ export default function ShippingCalculatorPage() {
   useEffect(() => {
     async function loadPresets() {
       try {
-        // Get user ID
-        let userId = '';
-        const userString = localStorage.getItem('user');
-        if (userString) {
-          const userData = JSON.parse(userString);
-          userId = userData.id;
-        }
-
+        const userId = user?.id;
         if (!userId) return;
 
         // Load presets from Supabase
@@ -210,7 +204,7 @@ export default function ShippingCalculatorPage() {
     }
 
     loadPresets();
-  }, []);
+  }, [user?.id]);
 
   // Save visible columns to localStorage when changed
   useEffect(() => {
@@ -237,14 +231,7 @@ export default function ShippingCalculatorPage() {
     if (!newPresetName.trim()) return;
 
     try {
-      // Get user ID
-      let userId = '';
-      const userString = localStorage.getItem('user');
-      if (userString) {
-        const userData = JSON.parse(userString);
-        userId = userData.id;
-      }
-
+      const userId = user?.id;
       if (!userId) {
         toast.error('User not authenticated');
         return;
@@ -324,111 +311,14 @@ export default function ShippingCalculatorPage() {
 
   const isColumnVisible = (columnId: ColumnId) => visibleColumns.includes(columnId);
 
-  // First useEffect - only for auth checking
   useEffect(() => {
-    console.log("ShippingCalculator: Checking authentication");
+    const staffId = user?.id;
+    if (!staffId) return;
 
-    // Simple check for user data in localStorage
-    function checkLocalAuth() {
-      try {
-        // First check our local user object
-        const userData = localStorage.getItem('user');
-        if (userData) {
-          const user = JSON.parse(userData);
-          if (user && user.isAuthenticated) {
-            console.log("ShippingCalculator: Local auth found for", user.email);
-            setAuthChecked(true);
-            return true;
-          }
-        }
-
-        // Also check our auth_session
-        const authSession = localStorage.getItem('auth_session');
-        if (authSession) {
-          const session = JSON.parse(authSession);
-          if (session && session.email) {
-            console.log("ShippingCalculator: Auth session found for", session.email);
-            setAuthChecked(true);
-            return true;
-          }
-        }
-
-        return false;
-      } catch (err) {
-        console.error("ShippingCalculator: Error checking local auth", err);
-        return false;
-      }
-    }
-
-    // Check Supabase session as a fallback
-    async function checkSupabaseAuth() {
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (data && data.session) {
-          console.log("ShippingCalculator: Supabase session found for", data.session.user.email);
-
-          // Save to localStorage for future checks
-          localStorage.setItem('user', JSON.stringify({
-            email: data.session.user.email,
-            id: data.session.user.id,
-            isAuthenticated: true
-          }));
-
-          setAuthChecked(true);
-          return true;
-        }
-        return false;
-      } catch (err) {
-        console.error("ShippingCalculator: Error checking Supabase auth", err);
-        return false;
-      }
-    }
-
-    // First try local auth (faster)
-    if (checkLocalAuth()) {
-      console.log("ShippingCalculator: User is authenticated via local storage");
-      return;
-    }
-
-    // If local auth fails, try Supabase
-    checkSupabaseAuth().then(isAuthenticated => {
-      if (!isAuthenticated) {
-        console.log("ShippingCalculator: No authentication found, redirecting to login");
-        window.location.href = '/login';
-      }
-    });
-  }, []);
-
-  // Load quotations from Supabase after auth is confirmed
-  useEffect(() => {
-    // Only load data after authentication is confirmed
-    if (!authChecked) return;
-
-    console.log("ShippingCalculator: Loading quotation data from Supabase");
-
-    // Get user data from localStorage
-    let userId = '';
-    try {
-      const userString = localStorage.getItem('user');
-      if (userString) {
-        const userData = JSON.parse(userString);
-        userId = userData.id;
-      }
-    } catch (error) {
-      console.error('Error getting user information:', error);
-    }
-
-    if (!userId) {
-      console.error('User ID not found, cannot load quotations');
-      setLoading(false);
-      return;
-    }
-
-    // Load from Supabase (including pending approval from customers)
-    async function loadQuotationsFromDB() {
+    async function loadQuotationsFromDB(uid: string) {
       try {
         const [quotationData, pendingData] = await Promise.all([
-          getQuotations(userId),
+          getQuotations(uid),
           getPendingApprovalQuotations(),
         ]);
 
@@ -454,8 +344,9 @@ export default function ShippingCalculatorPage() {
       }
     }
 
-    loadQuotationsFromDB();
-  }, [authChecked]);
+    setLoading(true);
+    loadQuotationsFromDB(staffId);
+  }, [user?.id]);
 
   // Format number as currency
   const formatCurrency = (amount: number) => {

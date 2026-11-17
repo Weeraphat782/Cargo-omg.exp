@@ -15,6 +15,15 @@ import { ROLES } from '@/lib/roles';
  * If Supabase/Google misconfigure returns PKCE ?code= or ?error= to /login (staff) instead of /site/auth/callback,
  * forward to the customer OAuth handler on the same origin.
  */
+const CLOCK_SKEW_THRESHOLD_SEC = 300;
+
+function clockSkewSeconds(session: { expires_at?: number; expires_in?: number }): number {
+  const expiresAt = session.expires_at ?? 0;
+  const expiresIn = session.expires_in ?? 3600;
+  const issuedAt = expiresAt - expiresIn;
+  return Math.floor(Date.now() / 1000) - issuedAt;
+}
+
 function OauthMisrouteRecovery() {
   const searchParams = useSearchParams();
   useEffect(() => {
@@ -28,6 +37,7 @@ function OauthMisrouteRecovery() {
 }
 
 function StaffLoginForm() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -36,6 +46,15 @@ function StaffLoginForm() {
   const [debugInfo, setDebugInfo] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+
+  useEffect(() => {
+    const reason = searchParams.get('reason');
+    if (reason !== 'session') return;
+    setErrorMessage(
+      'Your login could not be kept on this browser. Check that the computer date and time are correct and that this site is allowed to store data.',
+    );
+    setSuccessMessage('');
+  }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -63,6 +82,18 @@ function StaffLoginForm() {
       setDebugInfo((prev) => prev + `\nLogin response: Session exists: ${!!data?.session}\n`);
 
       if (data && data.session) {
+        const skewSec = clockSkewSeconds(data.session);
+        if (Math.abs(skewSec) > CLOCK_SKEW_THRESHOLD_SEC) {
+          const mins = Math.round(Math.abs(skewSec) / 60);
+          setErrorMessage(
+            `Your computer clock is off by about ${mins} minutes. Turn on "Set time automatically" in Windows (Date & time), sync the clock, then log in again.`,
+          );
+          setSuccessMessage('');
+          setDebugInfo((prev) => prev + `\nClock skew: ${skewSec}s\n`);
+          setIsLoading(false);
+          return;
+        }
+
         localStorage.setItem(
           'auth_session',
           JSON.stringify({
