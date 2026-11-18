@@ -30,6 +30,7 @@ import {
   UserCog,
   Palette,
   MessageSquare,
+  Bookmark,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,7 @@ const MENU_GROUPS = [
       { href: '/shipping-calculator', icon: Calculator, label: 'Shipping Calculator' },
       { href: '/proforma-invoices', icon: ScrollText, label: 'Proforma Invoices' },
       { href: '/document-submissions', icon: FileText, label: 'Document Submissions' },
+      { href: '/change-control', icon: Bookmark, label: 'Change Control' },
       { href: '/document-comparison', icon: FileCheck, label: 'Document Comparison' },
       { href: '/calendar', icon: Calendar, label: 'Calendar' },
       { href: '/social-artwork', icon: Palette, label: 'Social Artwork' },

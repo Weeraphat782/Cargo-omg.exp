@@ -34,6 +34,7 @@ import {
   updateAwbTracking,
 } from '@/lib/awb-tracking/service';
 import { TRACKING_STATUSES } from '@/lib/awb-tracking/core';
+import { registerChangeControlTools } from '@/lib/mcp/change-control-tools';
 
 const refInputSchema = fromJsonSchema<{ quotation_id?: string; omg_number?: string }>({
   type: 'object',
@@ -1003,4 +1004,6 @@ export function registerBookingTools(server: McpServer): void {
       }
     }
   );
+
+  registerChangeControlTools(server);
 }

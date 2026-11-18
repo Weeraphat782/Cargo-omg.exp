@@ -26,7 +26,8 @@
     "verify:replace-document": "npx tsx scripts/verify-replace-document.ts",
     "verify:create-quotation": "npx tsx scripts/verify-create-quotation.ts",
     "verify:quotation-documents": "npx tsx scripts/verify-quotation-documents.ts",
-    "verify:mcp-tools": "node scripts/list-mcp-tools.mjs"
+    "verify:mcp-tools": "node scripts/list-mcp-tools.mjs",
+    "verify:change-control": "npx tsx scripts/verify-change-control.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.23",
