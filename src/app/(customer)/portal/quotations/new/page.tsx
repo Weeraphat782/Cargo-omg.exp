@@ -121,6 +121,7 @@ export default function NewQuoteRequestPage() {
     const [extraNotifyEmails, setExtraNotifyEmails] = useState<string[]>([]);
     const [notifyInput, setNotifyInput] = useState('');
     const [rememberNotifyRecipients, setRememberNotifyRecipients] = useState(false);
+    const [changePolicyAck, setChangePolicyAck] = useState(false);
 
     useEffect(() => {
         void getSavedNotifyRecipients().then((saved) => {
@@ -248,6 +249,9 @@ export default function NewQuoteRequestPage() {
         if (!phytoRequired && !dataLoggerAttached && !noAttachments) {
             newErrors['attachments'] = 'Please select Phyto, Data Logger, or No attachments';
         }
+        if (!changePolicyAck) {
+            newErrors['changePolicy'] = 'Please accept the change and penalty policy';
+        }
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -281,7 +285,8 @@ export default function NewQuoteRequestPage() {
                 submitNotes,
                 commodity,
                 phytoRequired,
-                { extraNotifyEmails, rememberNotifyRecipients }
+                { extraNotifyEmails, rememberNotifyRecipients },
+                changePolicyAck
             );
 
             if (result.success && result.quotationId) {
@@ -817,6 +822,38 @@ export default function NewQuoteRequestPage() {
                         />
                     </div>
 
+                    <div className="bg-amber-50 border border-amber-200 rounded-sm p-4 space-y-3">
+                        <p className="text-sm text-gray-800 leading-relaxed">
+                            การเปลี่ยนแปลงเอกสารหรือรายละเอียดการขนส่งต้องแจ้งล่วงหน้า{' '}
+                            <span className="font-bold">48–72 ชั่วโมงก่อนเที่ยวบิน</span> หากแจ้งช้ากว่านั้น
+                            อาจมีค่าปรับ (penalty) จากสายการบินหรือตัวแทนขนส่ง
+                        </p>
+                        <p className="text-xs text-gray-600 leading-relaxed">
+                            Document or shipment changes must be sent 48–72 hours before the flight. Later
+                            changes may incur a penalty.
+                        </p>
+                        <label className="flex items-start gap-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={changePolicyAck}
+                                onChange={(e) => {
+                                    setChangePolicyAck(e.target.checked);
+                                    if (e.target.checked && errors.changePolicy) {
+                                        setErrors((prev) => {
+                                            const next = { ...prev };
+                                            delete next.changePolicy;
+                                            return next;
+                                        });
+                                    }
+                                }}
+                                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span className="text-sm font-medium text-gray-900">
+                                ฉันได้อ่านและยอมรับเงื่อนไขนี้ / I have read and accept this.
+                            </span>
+                        </label>
+                    </div>
+
                     {Object.keys(errors).length > 0 && (
                         <div className="bg-red-50 border border-red-100 rounded-sm p-4">
                             <ul className="text-xs text-red-600 space-y-0.5">
@@ -838,8 +875,12 @@ export default function NewQuoteRequestPage() {
                         <button
                             type="button"
                             onClick={handleSubmitQuote}
-                            disabled={submitting}
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white text-sm font-bold rounded-sm hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
+                            disabled={submitting || !changePolicyAck}
+                            className={`inline-flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-sm transition-colors shadow-sm ${
+                                changePolicyAck && !submitting
+                                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
                         >
                             {submitting ? (
                                 <>

@@ -401,6 +401,8 @@ export async function upsertSavedNotifyRecipients(emails: string[]): Promise<voi
   });
 }
 
+export const CHANGE_POLICY_VERSION = '48-72h-v1';
+
 export async function createCustomerQuoteRequest(
   pallets: { length: number; width: number; height: number; weight: number; quantity: number }[],
   requestedDestination: string,
@@ -409,8 +411,16 @@ export async function createCustomerQuoteRequest(
   commodity: CommodityType = 'cannabis',
   phytoRequired: boolean = false,
   notifyOptions?: { extraNotifyEmails?: string[]; rememberNotifyRecipients?: boolean },
+  changePolicyAccepted = false,
 ): Promise<{ success: boolean; quotationId?: string; error?: string }> {
   try {
+    if (!changePolicyAccepted) {
+      return {
+        success: false,
+        error: 'You must accept the change and penalty policy before submitting.',
+      };
+    }
+
     await loadSession();
 
     const { data: { user } } = await queryClient.auth.getUser();
@@ -476,6 +486,9 @@ export async function createCustomerQuoteRequest(
         clearance_cost: 0,
         delivery_cost: 0,
         delivery_notify_emails: deliveryNotifyEmails,
+        change_policy_ack_at: new Date().toISOString(),
+        change_policy_ack_by: user.id,
+        change_policy_version: CHANGE_POLICY_VERSION,
       })
       .select('id')
       .single();
