@@ -25,6 +25,15 @@ import toast from 'react-hot-toast';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 
 interface PalletInput {
     id: string;
@@ -122,6 +131,7 @@ export default function NewQuoteRequestPage() {
     const [notifyInput, setNotifyInput] = useState('');
     const [rememberNotifyRecipients, setRememberNotifyRecipients] = useState(false);
     const [changePolicyAck, setChangePolicyAck] = useState(false);
+    const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
 
     useEffect(() => {
         void getSavedNotifyRecipients().then((saved) => {
@@ -256,11 +266,16 @@ export default function NewQuoteRequestPage() {
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleSubmitQuote = async () => {
+    const handleSubmitQuote = () => {
         if (!commodity || !validate()) {
             toast.error('Please fill in all required fields.');
             return;
         }
+        setSubmitConfirmOpen(true);
+    };
+
+    const confirmSubmitQuote = async () => {
+        if (!commodity || !changePolicyAck) return;
 
         setSubmitting(true);
         try {
@@ -290,6 +305,7 @@ export default function NewQuoteRequestPage() {
             );
 
             if (result.success && result.quotationId) {
+                setSubmitConfirmOpen(false);
                 setSubmittedQuotationId(result.quotationId);
                 setCurrentStep(3);
                 toast.success('Quote request submitted!');
@@ -1129,6 +1145,52 @@ export default function NewQuoteRequestPage() {
                     </div>
                 </div>
             )}
+
+            <Dialog open={submitConfirmOpen} onOpenChange={setSubmitConfirmOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>ยืนยันส่งคำขอใบเสนอราคา / Confirm quote request</DialogTitle>
+                        <DialogDescription asChild>
+                            <div className="space-y-2 pt-2 text-left text-sm text-gray-600">
+                                <p>
+                                    การเปลี่ยนแปลงต้องแจ้งล่วงหน้า{' '}
+                                    <span className="font-semibold text-gray-800">48–72 ชั่วโมงก่อนเที่ยวบิน</span>{' '}
+                                    หากช้ากว่านั้นอาจมีค่าปรับ
+                                </p>
+                                <p>
+                                    Changes must be sent 48–72 hours before the flight. Later changes may incur a
+                                    penalty.
+                                </p>
+                            </div>
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={submitting}
+                            onClick={() => setSubmitConfirmOpen(false)}
+                        >
+                            ยกเลิก / Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                            disabled={submitting}
+                            onClick={() => void confirmSubmitQuote()}
+                        >
+                            {submitting ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    กำลังส่ง…
+                                </>
+                            ) : (
+                                'ยืนยันส่งคำขอ / OK'
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <div className="flex items-center gap-4 rounded-sm border border-teal-200 bg-gradient-to-r from-teal-50 to-cyan-50 p-4">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100">
