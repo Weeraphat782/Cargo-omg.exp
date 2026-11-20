@@ -1,5 +1,4 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server';
-import { resolveOpCardId } from '@/lib/mcp/booking-service';
 
 export type CaseClosureRef = {
   quotation_id?: string;
@@ -295,7 +294,10 @@ function createDefaultDeps(): CaseClosureDeps {
   if (!supabase) throw new Error('Server configuration error.');
 
   return {
-    resolveOpCardId: (ref) => resolveOpCardId(supabase, ref),
+    resolveOpCardId: async (ref) => {
+      const { resolveOpCardId } = await import('@/lib/mcp/booking-service');
+      return resolveOpCardId(supabase, ref);
+    },
     loadOpportunity: async (opCardId) => {
       const { data, error } = await supabase
         .from('opportunities')
