@@ -84,6 +84,7 @@ const SETTINGS_ITEMS = [
   { href: '/settings/ai', icon: Sparkles, label: 'AI Settings' },
   { href: '/document-comparison/rules', icon: ListChecks, label: 'Comparison Rules' },
   { href: '/settings/carrier-board', icon: Plane, label: 'Carrier board' },
+  { href: '/settings/consent-log', icon: ScrollText, label: 'LOG' },
 ];
 
 const ADMIN_ONLY_SETTINGS = [
