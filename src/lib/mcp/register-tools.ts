@@ -34,6 +34,11 @@ import {
   updateAwbTracking,
 } from '@/lib/awb-tracking/service';
 import { TRACKING_STATUSES } from '@/lib/awb-tracking/core';
+import {
+  completeCase,
+  markLoseCase,
+  reopenCase,
+} from '@/lib/mcp/case-closure';
 
 const refInputSchema = fromJsonSchema<{ quotation_id?: string; omg_number?: string }>({
   type: 'object',
@@ -492,6 +497,93 @@ const updateOpCardRefSchema = z
   })
   .refine((a) => a.quotation_id || a.omg_number || a.op_card_id, 'Provide quotation_id, omg_number, or op_card_id');
 
+const caseRefSchema = z
+  .object({
+    quotation_id: z.string().uuid().optional(),
+    omg_number: z.string().min(1).optional(),
+    op_card_id: z.string().uuid().optional(),
+  })
+  .refine((a) => a.quotation_id || a.omg_number || a.op_card_id, {
+    message: 'Provide op_card_id, omg_number, or quotation_id',
+  });
+
+const markLoseCaseSchema = caseRefSchema.and(
+  z.object({
+    reason: z.string().min(1),
+    note: z.string().optional(),
+  })
+);
+
+const reopenCaseSchema = caseRefSchema.and(
+  z.object({
+    reason: z.string().min(1),
+  })
+);
+
+const completeCaseSchema = caseRefSchema.and(
+  z.object({
+    note: z.string().optional(),
+    force: z.boolean().optional(),
+  })
+);
+
+const markLoseCaseInputSchema = fromJsonSchema<{
+  quotation_id?: string;
+  omg_number?: string;
+  op_card_id?: string;
+  reason: string;
+  note?: string;
+}>({
+  type: 'object',
+  properties: {
+    quotation_id: { type: 'string', description: 'Quotation UUID' },
+    omg_number: { type: 'string', description: 'OMG number, e.g. OMG11059' },
+    op_card_id: { type: 'string', description: 'Opportunity / Op card UUID' },
+    reason: { type: 'string', description: 'Why the job is lost (required)' },
+    note: { type: 'string', description: 'Optional extra note' },
+  },
+  required: ['reason'],
+  additionalProperties: false,
+});
+
+const reopenCaseInputSchema = fromJsonSchema<{
+  quotation_id?: string;
+  omg_number?: string;
+  op_card_id?: string;
+  reason: string;
+}>({
+  type: 'object',
+  properties: {
+    quotation_id: { type: 'string' },
+    omg_number: { type: 'string' },
+    op_card_id: { type: 'string' },
+    reason: { type: 'string', description: 'Why reopening (required)' },
+  },
+  required: ['reason'],
+  additionalProperties: false,
+});
+
+const completeCaseInputSchema = fromJsonSchema<{
+  quotation_id?: string;
+  omg_number?: string;
+  op_card_id?: string;
+  note?: string;
+  force?: boolean;
+}>({
+  type: 'object',
+  properties: {
+    quotation_id: { type: 'string' },
+    omg_number: { type: 'string' },
+    op_card_id: { type: 'string' },
+    note: { type: 'string' },
+    force: {
+      type: 'boolean',
+      description: 'Allow complete when stage is not delivered/payment_received',
+    },
+  },
+  additionalProperties: false,
+});
+
 const updateOpCardSchema = updateOpCardRefSchema.and(
   z.object({
     stage: z.enum(OP_STAGES).optional(),
@@ -803,6 +895,69 @@ export function registerBookingTools(server: McpServer): void {
       const card = await getOpCard(ref);
       if (!card) return jsonText({ error: 'Opportunity not found.' });
       return jsonText(card);
+    }
+  );
+
+  server.registerTool(
+    'mark_lose_case',
+    {
+      description:
+        'Close a job as Lose Case: customer cancelled or lost, or duplicate job. Same as the web UI Lose Case. Requires reason. Reversible with reopen_case.',
+      inputSchema: markLoseCaseInputSchema,
+    },
+    async (args) => {
+      try {
+        const parsed = parseOrThrow(markLoseCaseSchema, args);
+        const { reason, note, ...ref } = parsed;
+        return jsonText(await markLoseCase(ref, reason, note));
+      } catch (err) {
+        return jsonText({
+          ok: false,
+          error: err instanceof Error ? err.message : 'mark_lose_case failed',
+        });
+      }
+    }
+  );
+
+  server.registerTool(
+    'complete_case',
+    {
+      description:
+        'Mark a job Completed (job finished). Same as the web UI Complete / Win: linked quotations become completed. Requires stage delivered or payment_received unless force=true. Reversible with reopen_case.',
+      inputSchema: completeCaseInputSchema,
+    },
+    async (args) => {
+      try {
+        const parsed = parseOrThrow(completeCaseSchema, args);
+        const { note, force, ...ref } = parsed;
+        return jsonText(await completeCase(ref, { note, force }));
+      } catch (err) {
+        return jsonText({
+          ok: false,
+          error: err instanceof Error ? err.message : 'complete_case failed',
+        });
+      }
+    }
+  );
+
+  server.registerTool(
+    'reopen_case',
+    {
+      description:
+        'Undo Lose Case or Completed. Restores previous stage and quotation statuses from snapshot when available. Requires reason.',
+      inputSchema: reopenCaseInputSchema,
+    },
+    async (args) => {
+      try {
+        const parsed = parseOrThrow(reopenCaseSchema, args);
+        const { reason, ...ref } = parsed;
+        return jsonText(await reopenCase(ref, reason));
+      } catch (err) {
+        return jsonText({
+          ok: false,
+          error: err instanceof Error ? err.message : 'reopen_case failed',
+        });
+      }
     }
   );
 

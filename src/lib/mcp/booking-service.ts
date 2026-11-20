@@ -182,7 +182,7 @@ async function quotationHasDocuments(
   return (oCount ?? 0) > 0;
 }
 
-async function resolveOpCardId(
+export async function resolveOpCardId(
   supabase: SupabaseClient,
   ref: { quotation_id?: string; omg_number?: string; op_card_id?: string }
 ): Promise<string> {
