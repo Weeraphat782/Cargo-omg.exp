@@ -840,13 +840,9 @@ export default function NewQuoteRequestPage() {
 
                     <div className="bg-amber-50 border border-amber-200 rounded-sm p-4 space-y-3">
                         <p className="text-sm text-gray-800 leading-relaxed">
-                            การเปลี่ยนแปลงเอกสารหรือรายละเอียดการขนส่งต้องแจ้งล่วงหน้า{' '}
-                            <span className="font-bold">48–72 ชั่วโมงก่อนเที่ยวบิน</span> หากแจ้งช้ากว่านั้น
-                            อาจมีค่าปรับ (penalty) จากสายการบินหรือตัวแทนขนส่ง
-                        </p>
-                        <p className="text-xs text-gray-600 leading-relaxed">
-                            Document or shipment changes must be sent 48–72 hours before the flight. Later
-                            changes may incur a penalty.
+                            Document or shipment changes must be sent{' '}
+                            <span className="font-bold">48–72 hours before the flight</span>. Later changes
+                            may incur a penalty from the airline or freight agent.
                         </p>
                         <label className="flex items-start gap-3 cursor-pointer">
                             <input
@@ -865,7 +861,7 @@ export default function NewQuoteRequestPage() {
                                 className="mt-0.5 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                             />
                             <span className="text-sm font-medium text-gray-900">
-                                ฉันได้อ่านและยอมรับเงื่อนไขนี้ / I have read and accept this.
+                                I have read and accept this.
                             </span>
                         </label>
                     </div>
@@ -1149,17 +1145,13 @@ export default function NewQuoteRequestPage() {
             <Dialog open={submitConfirmOpen} onOpenChange={setSubmitConfirmOpen}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>ยืนยันส่งคำขอใบเสนอราคา / Confirm quote request</DialogTitle>
+                        <DialogTitle>Confirm quote request</DialogTitle>
                         <DialogDescription asChild>
-                            <div className="space-y-2 pt-2 text-left text-sm text-gray-600">
+                            <div className="pt-2 text-left text-sm text-gray-600">
                                 <p>
-                                    การเปลี่ยนแปลงต้องแจ้งล่วงหน้า{' '}
-                                    <span className="font-semibold text-gray-800">48–72 ชั่วโมงก่อนเที่ยวบิน</span>{' '}
-                                    หากช้ากว่านั้นอาจมีค่าปรับ
-                                </p>
-                                <p>
-                                    Changes must be sent 48–72 hours before the flight. Later changes may incur a
-                                    penalty.
+                                    Changes must be sent{' '}
+                                    <span className="font-semibold text-gray-800">48–72 hours before the flight</span>.
+                                    Later changes may incur a penalty.
                                 </p>
                             </div>
                         </DialogDescription>
@@ -1171,7 +1163,7 @@ export default function NewQuoteRequestPage() {
                             disabled={submitting}
                             onClick={() => setSubmitConfirmOpen(false)}
                         >
-                            ยกเลิก / Cancel
+                            Cancel
                         </Button>
                         <Button
                             type="button"
@@ -1182,10 +1174,10 @@ export default function NewQuoteRequestPage() {
                             {submitting ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    กำลังส่ง…
+                                    Submitting…
                                 </>
                             ) : (
-                                'ยืนยันส่งคำขอ / OK'
+                                'OK'
                             )}
                         </Button>
                     </DialogFooter>

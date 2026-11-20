@@ -25,7 +25,7 @@ type ConsentLogRow = {
 
 function formatAckAt(iso: string): string {
   try {
-    return new Date(iso).toLocaleString('th-TH', {
+    return new Date(iso).toLocaleString('en-GB', {
       timeZone: 'Asia/Bangkok',
       dateStyle: 'medium',
       timeStyle: 'short',
@@ -105,7 +105,7 @@ export default function ConsentLogPage() {
           LOG — Change policy consent
         </h1>
         <p className="text-slate-500 mt-1">
-          ประวัติลูกค้ายอมรับเงื่อนไขการเปลี่ยนแปลง 48–72 ชม. ก่อนส่งคำขอใบเสนอราคา
+          Customers who accepted the 48–72 hour change policy before submitting a quote request.
         </p>
       </div>
 
@@ -124,7 +124,7 @@ export default function ConsentLogPage() {
           )}
           {error && <p className="text-red-500">Error: {error}</p>}
           {empty && (
-            <p className="text-slate-500 text-center py-8">ยังไม่มีประวัติการยอมรับเงื่อนไข</p>
+            <p className="text-slate-500 text-center py-8">No consent records yet.</p>
           )}
           {!loading && !error && rows.length > 0 && (
             <>
@@ -133,12 +133,12 @@ export default function ConsentLogPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>OMG</TableHead>
-                      <TableHead>บริษัท</TableHead>
-                      <TableHead>ผู้กดส่ง</TableHead>
-                      <TableHead>ส่งไป</TableHead>
+                      <TableHead>Company</TableHead>
+                      <TableHead>Submitted by</TableHead>
+                      <TableHead>Destination</TableHead>
                       <TableHead>Consignee</TableHead>
-                      <TableHead>เวลายอมรับ</TableHead>
-                      <TableHead>เวอร์ชัน</TableHead>
+                      <TableHead>Accepted at</TableHead>
+                      <TableHead>Version</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -158,7 +158,7 @@ export default function ConsentLogPage() {
                                 {row.quotation_no}
                               </Link>
                             ) : (
-                              <span className="text-slate-400">ยังไม่มีเลข</span>
+                              <span className="text-slate-400">No number yet</span>
                             )}
                           </TableCell>
                           <TableCell>{row.company_name?.trim() || '—'}</TableCell>
