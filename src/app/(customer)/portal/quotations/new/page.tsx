@@ -21,6 +21,7 @@ import {
 import { getDocumentTemplate } from '@/lib/db';
 import type { DocumentSubmission } from '@/lib/db';
 import { getFileUrl } from '@/lib/storage';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import toast from 'react-hot-toast';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -383,7 +384,7 @@ export default function NewQuoteRequestPage() {
             for (const item of uploadQueue) {
                 const generateUrlResponse = await fetch('/api/generate-upload-url', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         fileName: item.file.name,
                         contentType: item.file.type,

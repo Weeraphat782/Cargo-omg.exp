@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { authorizeQuotationWrite, readFileCaller } from '@/lib/file-access'
+import { keyUnderQuotation, normalizeObjectKey } from '@/lib/file-access-rules'
 import { sendTelegramDocumentUploadNotification } from '@/lib/telegram-admin-notify'
 import { sendDocumentUploadNotification } from '@/lib/mail'
 import { BOOKING_WEIGHT_DOC_TYPES, emitQuotationDocsUploaded } from '@/lib/webhooks'
@@ -9,6 +11,9 @@ export const maxDuration = 30
 
 // This route confirms a file upload (done via signed URL) and saves the DB record.
 export async function POST(request: NextRequest) {
+  const gate = await readFileCaller(request);
+  if (!gate.ok) return gate.response;
+
   const supabase = getSupabaseServerClient();
   if (!supabase) {
     return NextResponse.json(
@@ -38,6 +43,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const denied = await authorizeQuotationWrite(gate.caller, quotationId);
+    if (denied) return denied;
+
+    const storedKey = normalizeObjectKey(filePath);
+    if (!keyUnderQuotation(storedKey, quotationId)) {
+      return NextResponse.json({ error: 'File path does not belong to this shipment.' }, { status: 403 });
+    }
+
     // Record the submission in the database
     const { data: dbData, error: dbError } = await supabase
       .from('document_submissions')
@@ -47,7 +60,7 @@ export async function POST(request: NextRequest) {
         document_type_name: documentTypeName,
         file_name: originalFileName, // Always use original filename for display
         original_file_name: originalFileName,
-        file_path: filePath,
+        file_path: storedKey,
         file_url: '', // We will generate URL on the fly using getFileUrl helper
         notes: notes || null, // Ensure notes is null if empty/undefined
         company_name: companyName,

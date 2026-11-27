@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Download, Eye, CheckCircle, XCircle, FileText, Search, Trash2, ChevronDown, ChevronUp, ExternalLink, Loader2, UserCircle2, Leaf } from 'lucide-react';
-import { getDocumentSubmissions, getQuotations, getPendingApprovalQuotations, updateDocumentSubmission, deleteDocumentSubmission, Quotation as DbQuotation } from '@/lib/db';
+import { getDocumentSubmissions, getQuotations, getPendingApprovalQuotations, updateDocumentSubmission, deleteDocumentSubmission, generateShareToken, Quotation as DbQuotation } from '@/lib/db';
 import { formatFileSize, resolveDocumentFileUrl, mapWithConcurrency } from '@/lib/storage';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -62,6 +62,45 @@ type DocumentSubmissionUpdate = {
   status: 'pending' | 'approved' | 'rejected';
   feedback?: string;
 };
+
+function ShipmentPhotoLink({ quotationId, shareToken }: { quotationId: string; shareToken?: string | null }) {
+  const [token, setToken] = useState(shareToken || '');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (shareToken) {
+      setToken(shareToken);
+      return;
+    }
+    generateShareToken(quotationId).then((next) => {
+      if (!cancelled && next) setToken(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [quotationId, shareToken]);
+
+  if (typeof window === 'undefined' || !token) {
+    return <p className="text-sm text-muted-foreground">Preparing photo link…</p>;
+  }
+
+  const url = `${window.location.origin}/shipment-photo/${quotationId}?token=${encodeURIComponent(token)}`;
+  return (
+    <>
+      <div className="p-4 border rounded-md inline-block bg-white">
+        <QRCodeCanvas
+          value={url}
+          size={192}
+          bgColor="#ffffff"
+          fgColor="#000000"
+          level="H"
+          includeMargin
+        />
+      </div>
+      <p className="text-xs text-gray-500 mt-2 break-all">URL: {url}</p>
+    </>
+  );
+}
 
 const DOCUMENT_CATEGORIES = [
   { id: 'company-info', name: 'Company Information' },
@@ -881,21 +920,7 @@ export default function DocumentSubmissionsPage() {
                             <p className="text-sm text-muted-foreground mb-3">
                               Scan this QR code with a mobile device to access the shipment photo upload page for this quotation.
                             </p>
-                            {typeof window !== 'undefined' && (
-                              <div className="p-4 border rounded-md inline-block bg-white">
-                                <QRCodeCanvas
-                                  value={`${window.location.origin}/shipment-photo/${quotationId}`}
-                                  size={192}
-                                  bgColor={"#ffffff"}
-                                  fgColor={"#000000"}
-                                  level={"H"}
-                                  includeMargin={true}
-                                />
-                              </div>
-                            )}
-                            <p className="text-xs text-gray-500 mt-2">
-                              URL: {typeof window !== 'undefined' ? `${window.location.origin}/shipment-photo/${quotationId}` : 'Loading...'}
-                            </p>
+                            <ShipmentPhotoLink quotationId={quotationId} shareToken={quotationInfo?.share_token} />
                           </div>
                           <div>
                             <h3 className="text-lg font-semibold mb-2">Uploaded Shipment Photos</h3>

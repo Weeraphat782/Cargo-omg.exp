@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, ChangeEvent } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +12,9 @@ import Image from 'next/image';
 
 export default function ShipmentPhotoPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const quotationId = params.id as string;
+  const linkToken = searchParams.get('token');
 
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
@@ -61,6 +64,7 @@ export default function ShipmentPhotoPage() {
     try {
       const response = await fetch('/api/upload-shipment-photo', {
         method: 'POST',
+        headers: await browserAuthHeaders(linkToken),
         body: formData,
       });
 

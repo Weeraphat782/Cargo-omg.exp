@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { CheckCircle2, Loader2, Upload, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 
 export default function CompanyOnboardingPage() {
     const params = useParams();
@@ -79,7 +80,7 @@ export default function CompanyOnboardingPage() {
                 // Get signed URL
                 const response = await fetch('/api/generate-upload-url', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: await browserAuthHeaders(token, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         fileName: file.name,
                         contentType: file.type,

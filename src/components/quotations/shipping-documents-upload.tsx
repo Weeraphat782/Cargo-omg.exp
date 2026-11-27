@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getFileUrl } from '@/lib/storage';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import { FileText, Upload, X, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -70,7 +71,7 @@ export function ShippingDocumentsUpload({
       // 1. Get Signed URL
       const generateUrlResponse = await fetch('/api/generate-upload-url', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           fileName: file.name,
           contentType: file.type,

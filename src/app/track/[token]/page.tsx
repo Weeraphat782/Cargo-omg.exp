@@ -114,18 +114,18 @@ export default function PublicTrackingPage({ params }: { params: Promise<{ token
                     const urls: { awb?: string; customs?: string } = {};
                     if (data.awb_file_url) {
                         const path = data.awb_file_url.includes('supabase') ? data.awb_file_url.split('/public/')[1] || data.awb_file_url : data.awb_file_url;
-                        urls.awb = await getFileUrl(path, data.storage_provider || 'supabase');
+                        urls.awb = await getFileUrl(path, data.storage_provider || 'supabase', 'documents', token);
                     }
                     if (data.customs_declaration_file_url) {
                         const path = data.customs_declaration_file_url.includes('supabase') ? data.customs_declaration_file_url.split('/public/')[1] || data.customs_declaration_file_url : data.customs_declaration_file_url;
-                        urls.customs = await getFileUrl(path, data.storage_provider || 'supabase');
+                        urls.customs = await getFileUrl(path, data.storage_provider || 'supabase', 'documents', token);
                     }
                     setResolvedUrls(urls);
 
                     // Resolve Document Submissions
                     if (data.documents && data.documents.length > 0) {
                         const resolvedDocs = await Promise.all(data.documents.map(async (doc) => {
-                            const url = await getFileUrl(doc.file_path || doc.file_url, doc.storage_provider || 'supabase');
+                            const url = await getFileUrl(doc.file_path || doc.file_url, doc.storage_provider || 'supabase', 'documents', token);
                             return { ...doc, file_url: url };
                         }));
                         setResolvedSubmissions(resolvedDocs);

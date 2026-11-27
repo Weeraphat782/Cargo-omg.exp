@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { authorizeUpload, readFileCaller, type UploadIntent } from '@/lib/file-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,9 @@ function createSafeFileName(originalFileName: string): string {
 
 export async function POST(request: NextRequest) {
   try {
+    const gate = await readFileCaller(request);
+    if (!gate.ok) return gate.response;
+
     const body = await request.json();
     const { fileName, contentType, quotationId, companyId, userId, documentType, docTypeId, isCompanyDoc, qcRequestId } = body;
 
@@ -45,6 +49,27 @@ export async function POST(request: NextRequest) {
 
     // Create a URL-safe filename
     const safeFileName = createSafeFileName(fileName);
+
+    let intent: UploadIntent;
+    if (documentType === 'template') {
+      intent = { kind: 'template' };
+    } else if (typeof documentType === 'string' && documentType.startsWith('qc-') && qcRequestId) {
+      intent = { kind: 'qc', qcRequestId };
+    } else if (isCompanyDoc) {
+      intent = { kind: 'company-doc', userId: userId || companyId };
+    } else if (quotationId) {
+      intent = { kind: 'quotation', quotationId };
+    } else if (companyId) {
+      intent = { kind: 'company-registration', companyId };
+    } else {
+      return NextResponse.json(
+        { error: 'Missing parent ID (quotationId or companyId) for document upload.' },
+        { status: 400 }
+      );
+    }
+
+    const denied = await authorizeUpload(gate.caller, intent);
+    if (denied) return denied;
 
     let filePath: string;
     if (documentType === 'template') {

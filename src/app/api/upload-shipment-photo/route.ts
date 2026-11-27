@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
+import { authorizeQuotationWrite, readFileCaller } from '@/lib/file-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,9 @@ interface UploadErrorDetail {
 
 // API Route to handle shipment photo uploads
 export async function POST(request: NextRequest) {
+  const gate = await readFileCaller(request);
+  if (!gate.ok) return gate.response;
+
   const supabase = getSupabaseServerClient();
   if (!supabase) {
     return NextResponse.json(
@@ -30,6 +34,9 @@ export async function POST(request: NextRequest) {
     if (!quotationId) {
       return NextResponse.json({ error: 'Missing quotationId.' }, { status: 400 });
     }
+
+    const denied = await authorizeQuotationWrite(gate.caller, quotationId);
+    if (denied) return denied;
 
 
     const uploadedPhotoPaths: string[] = [];

@@ -845,10 +845,11 @@ export async function cancelCustomerQuoteRequest(
     const { data: { user } } = await queryClient.auth.getUser();
     if (!user) return { success: false, error: 'Not authenticated' };
 
+    const { browserAuthHeaders } = await import('@/lib/browser-auth');
     const res = await fetch('/api/cancel-quote-request', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quotationId, userId: user.id }),
+      headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ quotationId }),
     });
 
     const json = await res.json();
