@@ -239,7 +239,8 @@ export async function deleteQuotationDocument(input: DeleteQuotationDocumentInpu
 
 export async function attachmentWithMissingFlag(
   doc: DocumentRow,
-  resolveUrl: (d: DocumentRow) => Promise<string | null>
+  resolveUrl: (d: DocumentRow) => Promise<string | null>,
+  opts?: { checkExists?: boolean }
 ): Promise<{
   id: string;
   document_type: string;
@@ -251,7 +252,8 @@ export async function attachmentWithMissingFlag(
   is_current: boolean;
 }> {
   let file_missing = false;
-  if (doc.file_path) {
+  // Default skips the per-file R2 HEAD. Signing is local. Opt in to detect a missing object.
+  if (opts?.checkExists === true && doc.file_path) {
     const { r2ObjectExists } = await import('@/lib/storage');
     file_missing = !(await r2ObjectExists(doc.file_path));
   }

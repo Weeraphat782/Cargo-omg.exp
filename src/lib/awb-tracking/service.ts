@@ -1,6 +1,6 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server';
-import { sendDeliveredNotification } from '@/lib/mail';
 import { resolveImportPermitNo } from './delivered-email';
+import { AWB_TRACK_STAGES, trackCutoffYmd, withinTrackWindow } from './list-window';
 import {
   applyTrackingUpdate,
   carrierFromAwb,
@@ -52,17 +52,6 @@ function mapQuotationRow(data: Record<string, unknown>): QuotationRow {
   };
 }
 
-function referenceDateForList(row: {
-  created_at?: string | null;
-  opportunities?: { pickup_date?: string | null } | { pickup_date?: string | null }[] | null;
-}): string | null {
-  const opp = row.opportunities;
-  const oppRow = Array.isArray(opp) ? opp[0] : opp;
-  const pickup = oppRow?.pickup_date?.trim();
-  if (pickup) return pickup.slice(0, 10);
-  const created = row.created_at?.trim();
-  return created ? created.slice(0, 10) : null;
-}
 
 function buildDeps(): TrackingDeps {
   const supabase = getSupabaseServerClient();
@@ -224,6 +213,7 @@ function buildDeps(): TrackingDeps {
         });
       }
       try {
+        const { sendDeliveredNotification } = await import('@/lib/mail');
         const result = await sendDeliveredNotification({
           quotation,
           recipients: opts.recipients,
@@ -296,20 +286,25 @@ export async function listAwbsToTrack(opts?: { days?: number }) {
   if (!supabase) throw new Error('Server configuration error.');
 
   const days = opts?.days ?? 30;
-  const cutoff = new Date();
-  cutoff.setUTCDate(cutoff.getUTCDate() - days);
-  const cutoffYmd = cutoff.toISOString().slice(0, 10);
+  const cutoffYmd = trackCutoffYmd(days);
 
+  // Stage and the date window run in SQL. The date `or` is a superset (an old
+  // pickup on a newer quotation still comes back); withinTrackWindow drops those
+  // so the result matches the previous in-memory rule. No new index.
   const { data, error } = await supabase
     .from('quotations')
     .select(
       `quotation_no, awb_number, carrier_code, carrier_code_manual, tracking_status, tracking_checked_at,
-       destination, requested_destination, customer_name, company_name, opportunity_id, delivered_at, created_at,
-       opportunities(stage, pickup_date)`
+       destination, requested_destination, customer_name, company_name, created_at,
+       opportunities!inner(stage, pickup_date)`
     )
     .not('awb_number', 'is', null)
     .neq('awb_number', '')
-    .is('delivered_at', null);
+    .is('delivered_at', null)
+    .in('opportunities.stage', [...AWB_TRACK_STAGES])
+    .or(
+      `opportunities.pickup_date.gte.${cutoffYmd},created_at.gte.${cutoffYmd},created_at.is.null`
+    );
 
   if (error) throw new Error(error.message);
 
@@ -317,12 +312,14 @@ export async function listAwbsToTrack(opts?: { days?: number }) {
   const out: Record<string, unknown>[] = [];
 
   for (const row of rows) {
-    const opp = row.opportunities as { stage?: string; pickup_date?: string | null } | null;
+    const oppRaw = row.opportunities as
+      | { stage?: string; pickup_date?: string | null }
+      | { stage?: string; pickup_date?: string | null }[]
+      | null;
+    const opp = Array.isArray(oppRaw) ? oppRaw[0] : oppRaw;
     const stage = opp?.stage || '';
     if (!isStagePickedUpOrLater(stage)) continue;
-
-    const refYmd = referenceDateForList(row as { created_at?: string; opportunities?: typeof opp });
-    if (refYmd && refYmd < cutoffYmd) continue;
+    if (!withinTrackWindow(opp?.pickup_date, row.created_at as string | null, cutoffYmd)) continue;
 
     const norm = normalizeAwb(String(row.awb_number));
     const derived = norm ? carrierFromAwb(norm) : null;
