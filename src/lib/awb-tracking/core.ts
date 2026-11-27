@@ -194,6 +194,8 @@ export type QuotationRow = {
   booking_air_freight: BookingAirFreightJson | null;
   awb_origin?: string | null;
   awb_destination?: string | null;
+  /** Filled at email send. Not a quotations column. */
+  import_permit_number?: string | null;
 };
 
 export type ApplyTrackingInput = {

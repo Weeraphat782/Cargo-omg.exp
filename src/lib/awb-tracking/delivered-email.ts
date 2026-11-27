@@ -87,6 +87,77 @@ function trimPartyName(value: string | null | undefined): string | null {
   return t ? t : null;
 }
 
+export type ImportPermitSourceDoc = {
+  document_type?: string | null;
+  file_name?: string | null;
+  original_file_name?: string | null;
+  notes?: string | null;
+  superseded_at?: string | null;
+  submitted_at?: string | null;
+};
+
+const PERMIT_TOKEN = /[A-Za-z]{2,}(?:-[A-Za-z]{1,4})?[-/]\d{2,}[-/]\d{4}/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BOOKING_PERMIT_KEYS = [
+  'import_permit_number',
+  'import_permit_no',
+  'importPermitNumber',
+  'importPermitNo',
+  'import_permit',
+] as const;
+
+function isImportPermitDocType(value: string | null | undefined): boolean {
+  return (value || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'importpermit';
+}
+
+function stripExtension(name: string): string {
+  return name.trim().replace(/\.(pdf|jpe?g|png|webp|gif|heic|tiff?)$/i, '').trim();
+}
+
+/** Pull a permit id out of a file name or note. Generic uploads ("Import Permit.pdf") are not ids. */
+function permitFromLabel(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const stem = stripExtension(raw);
+  if (!stem || UUID_RE.test(stem)) return null;
+  const token = stem.match(PERMIT_TOKEN);
+  if (token) return token[0];
+  // ponytail: whole-name fallback for ids the token misses (e.g. BtM-12345). Misses numbers that exist only inside the PDF.
+  if (!/^[A-Za-z0-9][A-Za-z0-9./_-]{2,59}$/.test(stem)) return null;
+  if (!/[A-Za-z]/.test(stem) || !/\d/.test(stem) || !/[-/_]/.test(stem)) return null;
+  if (/import|permit|scan|final|copy|document|invoice|photo|image|whatsapp|screenshot/i.test(stem)) return null;
+  if (/^(img|dsc|image|photo|screenshot|scan)[-_]?\d+$/i.test(stem)) return null;
+  return stem;
+}
+
+/**
+ * Import permit number already stored on the quotation: booking field, then the
+ * current import-permit document name (or its notes). Null when none is stored.
+ */
+export function resolveImportPermitNo(opts: {
+  bookingDetails?: Record<string, unknown> | null;
+  documents?: ImportPermitSourceDoc[] | null;
+}): string | null {
+  const details = opts.bookingDetails;
+  if (details && typeof details === 'object') {
+    for (const key of BOOKING_PERMIT_KEYS) {
+      const raw = details[key];
+      if (typeof raw !== 'string') continue;
+      const parsed = permitFromLabel(raw);
+      if (parsed) return parsed;
+    }
+  }
+  const docs = (opts.documents ?? [])
+    .filter((d) => !d.superseded_at && isImportPermitDocType(d.document_type))
+    .sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || ''));
+  for (const doc of docs) {
+    const fromName = permitFromLabel(doc.original_file_name) || permitFromLabel(doc.file_name);
+    if (fromName) return fromName;
+    const fromNotes = permitFromLabel(doc.notes);
+    if (fromNotes) return fromNotes;
+  }
+  return null;
+}
+
 function bookingDetailString(details: Record<string, unknown> | null | undefined, key: string): string | null {
   if (!details || typeof details !== 'object') return null;
   const raw = details[key];
@@ -159,6 +230,7 @@ export function buildDeliveredEmailContent(opts: {
   if (consignee) rows.push(['Consignee', consignee]);
   if (routeDest) rows.push(['Route', `${routeOrigin} → ${routeDest}`]);
   if (flight) rows.push(['Flight', flight]);
+  rows.push(['Import Permit No.', q.import_permit_number?.trim() || '-']);
   if (pallets > 0) rows.push(['Pallets', String(pallets)]);
   if (chgKg != null) rows.push(['Chargeable weight', `${chgKg} kg`]);
   rows.push(['Delivered (Bangkok)', bangkok]);

@@ -1,5 +1,6 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { sendDeliveredNotification } from '@/lib/mail';
+import { resolveImportPermitNo } from './delivered-email';
 import {
   applyTrackingUpdate,
   carrierFromAwb,
@@ -207,6 +208,21 @@ function buildDeps(): TrackingDeps {
         .eq('id', qRow.id)
         .maybeSingle();
       const quotation = full ? mapQuotationRow(full as Record<string, unknown>) : qRow;
+      try {
+        const { data: docs, error: docsError } = await supabase
+          .from('document_submissions')
+          .select('document_type, file_name, original_file_name, notes, submitted_at, superseded_at')
+          .eq('quotation_id', quotation.id)
+          .is('superseded_at', null);
+        quotation.import_permit_number = resolveImportPermitNo({
+          bookingDetails: quotation.booking_details,
+          documents: !docsError && Array.isArray(docs) ? docs : null,
+        });
+      } catch {
+        quotation.import_permit_number = resolveImportPermitNo({
+          bookingDetails: quotation.booking_details,
+        });
+      }
       try {
         const result = await sendDeliveredNotification({
           quotation,
