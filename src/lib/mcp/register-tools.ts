@@ -1,6 +1,14 @@
 import { fromJsonSchema, type McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
+  getAwbTracking,
+  listAwbsToTrack,
+  manualResendDelivered,
+  updateAwbNumber,
+  updateAwbTracking,
+} from '@/lib/awb-tracking/service';
+import { TRACKING_STATUSES } from '@/lib/awb-tracking/core';
+import {
   approveQuotation,
   buildBookingEmailDraft,
   createOpCard,
@@ -10,35 +18,16 @@ import {
   getQuotationDocuments,
   listNewQuotations,
   markBookingEmailDrafted,
-  replaceQuotationDocument,
   updateOpCard,
   updateQuotationNetWeight,
 } from '@/lib/mcp/booking-service';
-import {
-  createQuotation,
-  createQuotationSchema,
-  updateQuotation,
-  updateQuotationSchema,
-} from '@/lib/mcp/create-quotation';
-import {
-  deleteQuotationDocument,
-  listMcpDocumentTypes,
-  uploadQuotationDocument,
-} from '@/lib/mcp/quotation-document-mcp';
-import { getQuotationPdf } from '@/lib/mcp/quotation-pdf';
-import {
-  getAwbTracking,
-  listAwbsToTrack,
-  manualResendDelivered,
-  updateAwbNumber,
-  updateAwbTracking,
-} from '@/lib/awb-tracking/service';
-import { TRACKING_STATUSES } from '@/lib/awb-tracking/core';
 import {
   completeCase,
   markLoseCase,
   reopenCase,
 } from '@/lib/mcp/case-closure';
+import { listMcpDocumentTypes } from '@/lib/mcp/document-catalog';
+import { getJobSummaries, JOB_STAGES, listJobs } from '@/lib/mcp/job-summary';
 
 const refInputSchema = fromJsonSchema<{ quotation_id?: string; omg_number?: string }>({
   type: 'object',
@@ -258,6 +247,7 @@ const docsRefInputSchema = fromJsonSchema<{
   quotation_id?: string;
   omg_number?: string;
   include_superseded?: boolean;
+  check_exists?: boolean;
 }>({
   type: 'object',
   properties: {
@@ -266,6 +256,11 @@ const docsRefInputSchema = fromJsonSchema<{
     include_superseded: {
       type: 'boolean',
       description: 'Include superseded document versions (default false)',
+    },
+    check_exists: {
+      type: 'boolean',
+      description:
+        'Default false. When true, HEAD each file in storage and set file_missing if the object is gone. When false, skip that HEAD and still return a signed download_url; file_missing stays false unless signing throws.',
     },
   },
   additionalProperties: false,
@@ -276,8 +271,90 @@ const docsRefSchema = z
     quotation_id: z.string().uuid().optional(),
     omg_number: z.string().min(1).optional(),
     include_superseded: z.boolean().optional(),
+    check_exists: z.boolean().optional(),
   })
   .refine((a) => a.quotation_id || a.omg_number, 'Provide quotation_id or omg_number');
+
+const jobSummariesInputSchema = fromJsonSchema<{
+  omg_numbers: string[];
+  include_documents?: boolean;
+}>({
+  type: 'object',
+  properties: {
+    omg_numbers: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      maxItems: 20,
+      description: 'OMG numbers, e.g. ["OMG11037","OMG11038"]. Max 20. Duplicates are ignored.',
+    },
+    include_documents: {
+      type: 'boolean',
+      description:
+        'When true, each job includes current document id, type, and file name only. No signed URLs. Default false.',
+    },
+  },
+  required: ['omg_numbers'],
+  additionalProperties: false,
+});
+
+const jobSummariesSchema = z.object({
+  omg_numbers: z.array(z.string().min(1)).min(1).max(20),
+  include_documents: z.boolean().optional(),
+});
+
+const listJobsInputSchema = fromJsonSchema<{
+  from?: string;
+  to?: string;
+  customer?: string;
+  destination?: string;
+  stage?: string;
+  flight?: string;
+  limit?: number;
+  include_documents?: boolean;
+}>({
+  type: 'object',
+  properties: {
+    from: { type: 'string', description: 'created_at lower bound, YYYY-MM-DD or ISO. Inclusive.' },
+    to: {
+      type: 'string',
+      description: 'created_at upper bound, YYYY-MM-DD or ISO. A date covers that whole UTC day.',
+    },
+    customer: { type: 'string', description: 'Partial match on company_name or customer_name.' },
+    destination: { type: 'string', description: 'Partial match on destination or requested_destination.' },
+    stage: {
+      type: 'string',
+      enum: [...JOB_STAGES],
+      description: 'Opportunity stage. Jobs with no op card are omitted when this is set.',
+    },
+    flight: {
+      type: 'string',
+      description: 'Exact flight number (case-insensitive) from booking_air_freight.flight_no.',
+    },
+    limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Default 20, max 50.' },
+    include_documents: {
+      type: 'boolean',
+      description: 'When true, include current document names only. No signed URLs. Default false.',
+    },
+  },
+  additionalProperties: false,
+});
+
+const listJobsSchema = z
+  .object({
+    from: z.string().min(1).optional(),
+    to: z.string().min(1).optional(),
+    customer: z.string().min(1).optional(),
+    destination: z.string().min(1).optional(),
+    stage: z.enum(JOB_STAGES).optional(),
+    flight: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+    include_documents: z.boolean().optional(),
+  })
+  .refine(
+    (a) => a.from || a.to || a.customer || a.destination || a.stage || a.flight,
+    'Provide at least one of from, to, customer, destination, stage, flight'
+  );
 
 const replaceDocInputSchema = fromJsonSchema<{
   quotation_id?: string;
@@ -603,6 +680,10 @@ function jsonText(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
 }
 
+function jsonTextCompact(data: unknown) {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(data) }] };
+}
+
 function parseOrThrow<T>(schema: z.ZodType<T>, args: unknown): T {
   const r = schema.safeParse(args);
   if (!r.success) throw new Error(r.error.errors.map((e) => e.message).join('; '));
@@ -667,6 +748,7 @@ export function registerBookingTools(server: McpServer): void {
     },
     async (args) => {
       try {
+        const { uploadQuotationDocument } = await import('@/lib/mcp/quotation-document-mcp');
         return jsonText(await uploadQuotationDocument(args as Parameters<typeof uploadQuotationDocument>[0]));
       } catch (err) {
         return jsonText({ ok: false, error: err instanceof Error ? err.message : 'Upload failed' });
@@ -691,6 +773,7 @@ export function registerBookingTools(server: McpServer): void {
     },
     async (args) => {
       try {
+        const { deleteQuotationDocument } = await import('@/lib/mcp/quotation-document-mcp');
         return jsonText(await deleteQuotationDocument(args as Parameters<typeof deleteQuotationDocument>[0]));
       } catch (err) {
         return jsonText({ ok: false, error: err instanceof Error ? err.message : 'Delete failed' });
@@ -716,6 +799,7 @@ export function registerBookingTools(server: McpServer): void {
     },
     async (args) => {
       try {
+        const { getQuotationPdf } = await import('@/lib/mcp/quotation-pdf');
         return jsonText(await getQuotationPdf(args as Parameters<typeof getQuotationPdf>[0]));
       } catch (err) {
         return jsonText({ ok: false, error: err instanceof Error ? err.message : 'PDF failed' });
@@ -727,7 +811,7 @@ export function registerBookingTools(server: McpServer): void {
     'get_quotation_documents',
     {
       description:
-        'List customer documents with signed download URLs. Flags file_missing when storage 404. Default: current versions only. Set include_superseded=true for replaced history.',
+        'List customer documents with signed download URLs. check_exists defaults to false (no storage HEAD; file_missing stays false unless signing throws). Set check_exists=true to flag file_missing when storage 404. Default list is current versions only. Set include_superseded=true for replaced history.',
       inputSchema: docsRefInputSchema,
     },
     async (args) => {
@@ -747,6 +831,7 @@ export function registerBookingTools(server: McpServer): void {
     },
     async (args) => {
       try {
+        const { createQuotation, createQuotationSchema } = await import('@/lib/mcp/create-quotation');
         const parsed = parseOrThrow(createQuotationSchema, args);
         const result = await createQuotation(parsed);
         return jsonText(result);
@@ -768,6 +853,7 @@ export function registerBookingTools(server: McpServer): void {
     },
     async (args) => {
       try {
+        const { updateQuotation, updateQuotationSchema } = await import('@/lib/mcp/create-quotation');
         const parsed = parseOrThrow(updateQuotationSchema, args);
         const result = await updateQuotation(parsed);
         return jsonText(result);
@@ -789,6 +875,7 @@ export function registerBookingTools(server: McpServer): void {
     },
     async (args) => {
       try {
+        const { replaceQuotationDocument } = await import('@/lib/mcp/replace-document');
         const parsed = parseOrThrow(replaceDocSchema, args);
         const result = await replaceQuotationDocument(parsed);
         return jsonText(result);
@@ -895,6 +982,32 @@ export function registerBookingTools(server: McpServer): void {
       const card = await getOpCard(ref);
       if (!card) return jsonText({ error: 'Opportunity not found.' });
       return jsonText(card);
+    }
+  );
+
+  server.registerTool(
+    'get_job_summaries',
+    {
+      description:
+        'Compact batch lookup for up to 20 OMG numbers: quotation, op card stage, weights, AWB, and flight. No customer_signature and no signed URLs. Set include_documents=true for current document names only. Response is compact JSON. Unknown OMGs are listed in missing.',
+      inputSchema: jobSummariesInputSchema,
+    },
+    async (args) => {
+      const parsed = parseOrThrow(jobSummariesSchema, args);
+      return jsonTextCompact(await getJobSummaries(parsed));
+    }
+  );
+
+  server.registerTool(
+    'list_jobs',
+    {
+      description:
+        'Search quotations by created_at range, customer, destination, op-card stage, or flight number. Returns the same compact job shape as get_job_summaries (no signature, no signed URLs). At least one filter is required. Default limit 20.',
+      inputSchema: listJobsInputSchema,
+    },
+    async (args) => {
+      const parsed = parseOrThrow(listJobsSchema, args);
+      return jsonTextCompact(await listJobs(parsed));
     }
   );
 

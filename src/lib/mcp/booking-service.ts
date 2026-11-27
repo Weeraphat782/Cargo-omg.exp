@@ -22,15 +22,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server';
 
 export { resolveOpportunityOwnerId };
 import { absoluteUrl } from '@/lib/site';
-import { getFileUrl } from '@/lib/storage';
 import type { DocumentSubmission, Pallet, Quotation } from '@/lib/db';
-import {
-  attachmentFromDocumentRow,
-  listQuotationDocumentRows,
-  replaceQuotationDocument,
-} from '@/lib/mcp/replace-document';
-
-export { replaceQuotationDocument };
 
 export type { BookingEmailDraft } from '@/lib/mcp/booking-draft';
 export { assembleBookingDraft, piecesLabel, productLabelFromCommodity, summarizePallets };
@@ -308,6 +300,7 @@ export async function getQuotationDetail(ref: {
   const quotation = await fetchQuotationByRef(supabase, ref);
   if (!quotation) return null;
 
+  const { listQuotationDocumentRows } = await import('@/lib/mcp/replace-document');
   const docs = await listQuotationDocumentRows(supabase, quotation.id, false);
 
   return { quotation, documents: docs as DocumentSubmission[] };
@@ -317,6 +310,8 @@ export async function getQuotationDocuments(ref: {
   quotation_id?: string;
   omg_number?: string;
   include_superseded?: boolean;
+  /** Default false: sign URLs without a storage HEAD. file_missing stays false unless signing throws. */
+  check_exists?: boolean;
 }) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error('Server configuration error.');
@@ -325,15 +320,23 @@ export async function getQuotationDocuments(ref: {
   if (!quotation) return null;
 
   const includeSuperseded = ref.include_superseded === true;
+  const checkExists = ref.check_exists === true;
+  const { attachmentFromDocumentRow, listQuotationDocumentRows } = await import(
+    '@/lib/mcp/replace-document'
+  );
   const docs = await listQuotationDocumentRows(supabase, quotation.id, includeSuperseded);
 
   const { attachmentWithMissingFlag } = await import('@/lib/mcp/quotation-document-mcp');
   const attachments = await Promise.all(
     docs.map((doc) =>
-      attachmentWithMissingFlag(doc, async (d) => {
-        const row = await attachmentFromDocumentRow(d);
-        return row.download_url;
-      })
+      attachmentWithMissingFlag(
+        doc,
+        async (d) => {
+          const row = await attachmentFromDocumentRow(d);
+          return row.download_url;
+        },
+        { checkExists }
+      )
     )
   );
   return {
@@ -367,6 +370,7 @@ export async function extractBookingFields(ref: {
         WEIGHT_DOC_ORDER.indexOf(a.document_type) - WEIGHT_DOC_ORDER.indexOf(b.document_type)
     );
 
+  const { getFileUrl } = await import('@/lib/storage');
   const verifyDocs = await Promise.all(
     weightDocs.map(async (d) => ({
       document_type: d.document_type,
@@ -729,22 +733,49 @@ export async function approveQuotation(ref: ApproveQuotationRef): Promise<{
   });
 }
 
+function embeddedOpp(value: unknown): Record<string, unknown> | null {
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row || typeof row !== 'object') return null;
+  return row as Record<string, unknown>;
+}
+
+function opCardPayload(
+  opp: Record<string, unknown>,
+  quotationId: string | null,
+  quotationNo: string | null
+) {
+  return {
+    ...opp,
+    op_card_id: opp.id,
+    linked_quotation_id: quotationId,
+    quotation_no: quotationNo,
+    omg_number: quotationNo,
+    url: `/opportunities/${String(opp.id)}`,
+  };
+}
+
 export async function getOpCard(ref: GetOpCardRef): Promise<Record<string, unknown> | null> {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error('Server configuration error.');
 
-  let opCardId = ref.op_card_id?.trim();
+  const opCardId = ref.op_card_id?.trim();
+  // OMG / quotation lookup only needs the link, not the full quotation row.
+  if (!opCardId) {
+    const quotationId = ref.quotation_id?.trim();
+    const omg = ref.omg_number?.trim();
+    let lookup = supabase.from('quotations').select('id, quotation_no, opportunities(*)');
+    if (quotationId) lookup = lookup.eq('id', quotationId);
+    else if (omg) lookup = lookup.eq('quotation_no', omg);
+    else return null;
+    const { data, error } = await lookup.maybeSingle();
+    if (error || !data) return null;
+    const opp = embeddedOpp(data.opportunities);
+    if (!opp) return null;
+    return opCardPayload(opp, data.id as string, (data.quotation_no as string) ?? null);
+  }
+
   let linkedQuotationId: string | null = null;
   let quotationNo: string | null = null;
-
-  if (!opCardId) {
-    const quotation = await fetchQuotationByRef(supabase, ref);
-    if (!quotation) return null;
-    linkedQuotationId = quotation.id;
-    quotationNo = quotation.quotation_no || null;
-    if (!quotation.opportunity_id) return null;
-    opCardId = quotation.opportunity_id;
-  }
 
   const { data: opp, error: oppError } = await supabase
     .from('opportunities')
@@ -755,26 +786,17 @@ export async function getOpCard(ref: GetOpCardRef): Promise<Record<string, unkno
   if (oppError) throw new Error(oppError.message);
   if (!opp) return null;
 
-  if (!linkedQuotationId) {
-    const { data: quotes, error: quoteError } = await supabase
-      .from('quotations')
-      .select('id, quotation_no')
-      .eq('opportunity_id', opp.id)
-      .order('created_at', { ascending: false })
-      .limit(1);
-    if (quoteError) {
-      console.error('[getOpCard] reverse quotation lookup failed:', quoteError.message);
-    }
-    linkedQuotationId = quotes?.[0]?.id ?? null;
-    quotationNo = quotes?.[0]?.quotation_no ?? null;
+  const { data: quotes, error: quoteError } = await supabase
+    .from('quotations')
+    .select('id, quotation_no')
+    .eq('opportunity_id', opp.id)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (quoteError) {
+    console.error('[getOpCard] reverse quotation lookup failed:', quoteError.message);
   }
+  linkedQuotationId = quotes?.[0]?.id ?? null;
+  quotationNo = quotes?.[0]?.quotation_no ?? null;
 
-  return {
-    ...opp,
-    op_card_id: opp.id,
-    linked_quotation_id: linkedQuotationId,
-    quotation_no: quotationNo,
-    omg_number: quotationNo,
-    url: `/opportunities/${opp.id}`,
-  };
+  return opCardPayload(opp as Record<string, unknown>, linkedQuotationId, quotationNo);
 }
