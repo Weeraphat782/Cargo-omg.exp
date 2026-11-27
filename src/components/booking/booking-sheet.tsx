@@ -25,6 +25,7 @@ import { resolveCustomerFacingShipper } from '@/lib/awb-tracking/delivered-email
 import type { Pallet } from '@/lib/db';
 import JSZip from 'jszip';
 import { toast } from 'sonner';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 
 interface BookingDocument {
   id: string;
@@ -269,7 +270,7 @@ export function BookingSheet({ token, readOnly }: { token: string; readOnly: boo
     try {
       const urlRes = await fetch('/api/generate-upload-url', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await browserAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           fileName: file.name,
           contentType: file.type || 'application/pdf',

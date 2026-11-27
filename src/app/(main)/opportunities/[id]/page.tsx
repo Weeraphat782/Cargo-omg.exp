@@ -8,7 +8,7 @@ import { Quotation, getQuotationPayableTotalThb } from '@/lib/db';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ArrowLeft, FileText, Edit, Calendar, Package, Eye, Flag, Globe, Link2, Link2Off, Share2, Receipt, ShieldCheck, CheckCircle, UserCircle2, Leaf, Loader2 } from 'lucide-react';
-import { unlinkQuotationFromOpportunity } from '@/lib/db';
+import { generateShareToken, unlinkQuotationFromOpportunity } from '@/lib/db';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { QuotationDocuments } from '@/components/quotations/quotation-documents';
@@ -169,12 +169,18 @@ export default function OpportunityDetailPage({ params }: { params: Promise<{ id
         }
     };
 
-    const handleShareLink = (quoteId: string, commodityType?: string) => {
+    const handleShareLink = async (quoteId: string, commodityType?: string) => {
         if (typeof window === 'undefined') return;
+
+        const share = await generateShareToken(quoteId);
+        if (!share) {
+            toast.error('Could not create a share link. Try again while signed in.');
+            return;
+        }
 
         const baseUrl = window.location.origin;
         const commodity = commodityType || 'cannabis';
-        const uploadUrl = `${baseUrl}/documents-upload/${quoteId}?company=${encodeURIComponent(opportunity?.companyName || '')}&destination=${encodeURIComponent(opportunity?.destinationName || '')}&commodity=${commodity}`;
+        const uploadUrl = `${baseUrl}/documents-upload/${quoteId}?company=${encodeURIComponent(opportunity?.companyName || '')}&destination=${encodeURIComponent(opportunity?.destinationName || '')}&commodity=${commodity}&token=${encodeURIComponent(share)}`;
 
         navigator.clipboard.writeText(uploadUrl).then(() => {
             toast.success('Upload link copied to clipboard');

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { CommodityType } from '@/lib/document-presets';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import { S3Client, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -121,14 +122,17 @@ export async function downloadFile(
 export async function deleteFile(
   bucket: string,
   path: string,
-  provider: 'supabase' | 'r2' = 'supabase'
+  provider: 'supabase' | 'r2' = 'supabase',
+  capabilityToken?: string | null
 ): Promise<boolean> {
   try {
     if (provider === 'r2') {
       // Check if we are running in the browser
       if (typeof window !== 'undefined') {
+        const headers = await browserAuthHeaders(capabilityToken);
         const response = await fetch(`/api/delete-file?path=${encodeURIComponent(path)}&bucket=${encodeURIComponent(bucket)}`, {
           method: 'DELETE',
+          headers,
         });
         return response.ok;
       }
@@ -382,7 +386,8 @@ export async function resolveDocumentFileUrl(params: {
 export async function getFileUrl(
   path: string,
   provider: 'supabase' | 'r2' = 'supabase',
-  bucket: string = 'documents'
+  bucket: string = 'documents',
+  capabilityToken?: string | null
 ): Promise<string> {
   // Guard: empty or missing path — nothing to resolve
   if (!path) return '';
@@ -399,9 +404,10 @@ export async function getFileUrl(
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
         try {
+          const headers = await browserAuthHeaders(capabilityToken);
           const response = await fetch(
             `/api/get-signed-url?path=${encodeURIComponent(path)}&bucket=${encodeURIComponent(bucket)}`,
-            { signal: controller.signal }
+            { signal: controller.signal, headers }
           );
           if (!response.ok) {
             throw new Error('Failed to fetch signed URL from server');

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getDocumentTemplate } from '@/lib/db';
 import { getFileUrl } from '@/lib/storage';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import {
   COMMODITY_META,
   getDocumentCategories,
@@ -72,6 +73,7 @@ export default function DocumentUploadPage() {
   const companyName = searchParams.get('company') || 'Unknown Company';
   const destination = searchParams.get('destination') || 'Unknown Destination';
   const commodity = normalizeCommodityType(searchParams.get('commodity'));
+  const linkToken = searchParams.get('token');
 
   const [includeMsds, setIncludeMsds] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<Record<string, File[]>>({});
@@ -242,9 +244,9 @@ export default function DocumentUploadPage() {
           console.log('Step 1: Getting signed URL...');
           const generateUrlResponse = await fetch('/api/generate-upload-url', {
             method: 'POST',
-            headers: {
+            headers: await browserAuthHeaders(linkToken, {
               'Content-Type': 'application/json',
-            },
+            }),
             body: JSON.stringify({
               fileName: queuedFile.file.name,
               contentType: queuedFile.file.type,
@@ -299,9 +301,9 @@ export default function DocumentUploadPage() {
           console.log('Step 3: Confirming upload...');
           const confirmResponse = await fetch('/api/confirm-upload', {
             method: 'POST',
-            headers: {
+            headers: await browserAuthHeaders(linkToken, {
               'Content-Type': 'application/json',
-            },
+            }),
             body: JSON.stringify({
               filePath: filePath,
               quotationId: quotationId,

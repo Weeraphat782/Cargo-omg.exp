@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { getFileUrl } from '@/lib/storage';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import { toast } from 'sonner';
 import {
   getQcCoaPaths,
@@ -33,7 +34,7 @@ import type { QcRequest } from '@/lib/qc-types';
 async function uploadQcFile(qcRequestId: string, file: File): Promise<string | null> {
   const generateUrlResponse = await fetch('/api/generate-upload-url', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       fileName: file.name,
       contentType: file.type,

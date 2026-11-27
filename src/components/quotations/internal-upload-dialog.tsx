@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { FilePlus, Upload, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { getPresetFlat, normalizeCommodityType, type CommodityType } from '@/lib/document-presets';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 
 interface InternalUploadDialogProps {
     quotationId: string;
@@ -56,7 +57,7 @@ export function InternalUploadDialog({
             // 1. Get Signed URL
             const generateUrlResponse = await fetch('/api/generate-upload-url', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     fileName: file.name,
                     contentType: file.type,
@@ -81,7 +82,7 @@ export function InternalUploadDialog({
             const docTypeObj = docTypes.find(t => t.id === documentType);
             const confirmResponse = await fetch('/api/confirm-upload', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     filePath,
                     quotationId,

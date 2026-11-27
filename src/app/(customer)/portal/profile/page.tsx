@@ -13,6 +13,7 @@ import {
   type CompanyDocument,
 } from '@/lib/customer-db';
 import { getFileUrl } from '@/lib/storage';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import { toast } from 'sonner';
 
 // Document slots available for company-level persistent storage
@@ -38,7 +39,7 @@ async function uploadCompanyDoc(
     // 1. Get signed upload URL
     const urlRes = await fetch('/api/generate-upload-url', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         fileName: file.name,
         contentType: file.type,
@@ -67,7 +68,7 @@ async function uploadCompanyDoc(
     // 3. Confirm in DB
     const confirmRes = await fetch('/api/confirm-company-document', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         filePath: path,
         userId,

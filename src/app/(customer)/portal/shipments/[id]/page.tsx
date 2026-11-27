@@ -34,6 +34,7 @@ import {
 import type { FreightRate, CompanyDocument } from '@/lib/customer-db';
 import { DocumentCheckCard } from '@/components/portal/document-check-card';
 import { getFileUrl } from '@/lib/storage';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import { toast } from 'react-hot-toast';
 import {
     Collapsible,
@@ -632,7 +633,7 @@ export default function ShipmentDetailPage() {
                 // 1. Get Signed URL
                 const generateUrlResponse = await fetch('/api/generate-upload-url', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         fileName: item.file.name,
                         contentType: item.file.type,

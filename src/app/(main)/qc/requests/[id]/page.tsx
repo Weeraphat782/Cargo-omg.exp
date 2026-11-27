@@ -29,6 +29,7 @@ import {
 import { computeQcTotalsWithDiscount } from '@/lib/qc-invoice';
 import { QcInvoiceContent } from '@/components/qc/qc-invoice-content';
 import { getFileUrl } from '@/lib/storage';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 import { toast } from 'sonner';
 import { getQcCoaPaths, isQcPaymentSlipImage, QC_PAYMENT_STATUS_LABELS } from '@/lib/qc-types';
 import type { QcRequest } from '@/lib/qc-types';
@@ -36,7 +37,7 @@ import type { QcRequest } from '@/lib/qc-types';
 async function uploadQcFile(qcRequestId: string, file: File, documentType: string): Promise<string | null> {
   const generateUrlResponse = await fetch('/api/generate-upload-url', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       fileName: file.name,
       contentType: file.type,

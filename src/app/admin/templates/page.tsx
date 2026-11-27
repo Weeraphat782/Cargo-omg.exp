@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { getAllTemplateDocumentTypes } from '@/lib/document-presets';
+import { browserAuthHeaders } from '@/lib/browser-auth';
 
 const DOCUMENT_TYPES = getAllTemplateDocumentTypes();
 
@@ -98,7 +99,7 @@ export default function TemplatesAdminPage() {
           // 1. Get Signed URL from R2
           const generateUrlResponse = await fetch('/api/generate-upload-url', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await browserAuthHeaders(null, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               fileName: file.name,
               contentType: file.type,

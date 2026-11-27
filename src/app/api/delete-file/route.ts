@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { authorizeObject, readFileCaller } from '@/lib/file-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,9 @@ const R2_BUCKET = process.env.R2_DOCS_BUCKET_NAME || 'documents';
  */
 export async function DELETE(request: NextRequest) {
     try {
+        const gate = await readFileCaller(request);
+        if (!gate.ok) return gate.response;
+
         const { searchParams } = new URL(request.url);
         const path = searchParams.get('path');
         const bucketParam = searchParams.get('bucket');
@@ -31,6 +35,9 @@ export async function DELETE(request: NextRequest) {
         if (!path) {
             return NextResponse.json({ error: 'Missing path parameter' }, { status: 400 });
         }
+
+        const denied = await authorizeObject(gate.caller, path, bucketParam, 'delete');
+        if (denied) return denied;
 
         console.log(`[API - delete-file] Deleting object at path: ${path} from bucket: ${bucket}`);
 

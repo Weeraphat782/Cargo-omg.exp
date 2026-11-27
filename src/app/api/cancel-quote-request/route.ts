@@ -1,22 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { readFileCaller } from '@/lib/file-access'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
+  const gate = await readFileCaller(request);
+  if (!gate.ok) return gate.response;
+
   const supabase = getSupabaseServerClient();
   if (!supabase) {
     return NextResponse.json({ error: 'Server configuration error.' }, { status: 500 })
   }
 
-  try {
-    const { quotationId, userId } = await request.json()
+  if (!gate.caller.userId) {
+    return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
+  }
 
-    if (!quotationId || !userId) {
-      return NextResponse.json({ error: 'Missing quotationId or userId.' }, { status: 400 })
+  try {
+    const { quotationId } = await request.json()
+
+    if (!quotationId) {
+      return NextResponse.json({ error: 'Missing quotationId.' }, { status: 400 })
     }
 
-    // Verify the quotation belongs to this user and is still pending_approval
+    // Verify the quotation belongs to this signed-in user and is still pending_approval
     const { data: quotation, error: fetchError } = await supabase
       .from('quotations')
       .select('id, status, customer_user_id')
@@ -27,7 +35,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Quotation not found.' }, { status: 404 })
     }
 
-    if (quotation.customer_user_id !== userId) {
+    if (!gate.caller.staff && quotation.customer_user_id !== gate.caller.userId) {
       return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
     }
 

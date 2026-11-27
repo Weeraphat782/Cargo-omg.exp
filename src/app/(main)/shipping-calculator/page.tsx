@@ -1039,8 +1039,13 @@ export default function ShippingCalculatorPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        const url = `${window.location.origin}/documents-upload/${quotation.id}?company=${encodeURIComponent(quotation.company_name || '')}&destination=${encodeURIComponent(quotation.destination || '')}&commodity=${quotation.commodity_type || 'cannabis'}`;
+                      onClick={async () => {
+                        const share = quotation.share_token || await generateShareToken(quotation.id);
+                        if (!share) {
+                          toast.error('Could not create a share link. Try again while signed in.');
+                          return;
+                        }
+                        const url = `${window.location.origin}/documents-upload/${quotation.id}?company=${encodeURIComponent(quotation.company_name || '')}&destination=${encodeURIComponent(quotation.destination || '')}&commodity=${quotation.commodity_type || 'cannabis'}&token=${encodeURIComponent(share)}`;
                         navigator.clipboard.writeText(url);
                         toast.success('Link Copied', {
                           description: 'Document upload link copied to clipboard!'
