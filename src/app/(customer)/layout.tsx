@@ -13,8 +13,11 @@ import {
   PlusCircle,
   FlaskConical,
   Search,
+  Loader2,
 } from 'lucide-react';
 import { CustomerAuthProvider, useCustomerAuth } from '@/contexts/customer-auth-context';
+import { customerNeedsCompanySetup } from '@/lib/customer-company-gate';
+import { customerHasCompanyRecord } from '@/lib/customer-db';
 
 const QC_FEATURE_SEEN_KEY = 'qc_feature_seen';
 
@@ -188,41 +191,80 @@ function PortalHeader({ onMenuClick }: { onMenuClick: () => void }) {
   );
 }
 
-// ============ AUTH REDIRECT (handles redirect only, no loading spinner) ============
-function AuthRedirect() {
+function GateHold({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[var(--paper-muted)] px-4">
+      {children ?? <Loader2 className="w-6 h-6 animate-spin text-gray-400" />}
+    </div>
+  );
+}
+
+// Portal shell stays unmounted until a customer has a company. The old gate
+// redirected in useEffect after My Shipments had already rendered.
+function CustomerLayoutInner({ children }: { children: React.ReactNode }) {
   const { isLoading, user, profile } = useCustomerAuth();
   const pathname = usePathname();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const nameMissing = !!profile && customerNeedsCompanySetup({
+    role: profile.role,
+    companyName: profile.company,
+  });
+  const [linkedCompany, setLinkedCompany] = useState<'unknown' | 'yes' | 'no'>('unknown');
+
+  useEffect(() => {
+    if (!nameMissing) return;
+    let cancelled = false;
+    setLinkedCompany('unknown');
+    customerHasCompanyRecord().then((has) => {
+      if (!cancelled) setLinkedCompany(has ? 'yes' : 'no');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [nameMissing, user?.id]);
+
+  const checkingLink = nameMissing && linkedCompany === 'unknown';
+  const needsSetup = nameMissing && linkedCompany === 'no';
+  const onSetup = pathname === '/portal/setup';
 
   useEffect(() => {
     if (isLoading) return;
-
     if (!user) {
-      window.location.href = '/site/login';
+      window.location.replace('/site/login');
       return;
     }
-
     if (profile && profile.role !== 'customer') {
-      window.location.href = '/shipping-calculator';
+      window.location.replace('/shipping-calculator');
       return;
     }
-
-    // First-time Gmail users: redirect to setup on any portal route except setup itself
-    if (profile && !profile.company && pathname.startsWith('/portal') && pathname !== '/portal/setup') {
-      window.location.href = '/portal/setup';
-      return;
+    if (needsSetup && !onSetup) {
+      window.location.replace('/portal/setup');
     }
-  }, [isLoading, user, profile, pathname]);
+  }, [isLoading, user, profile, needsSetup, onSetup]);
 
-  return null;
-}
+  if (isLoading || !user || (profile && profile.role !== 'customer') || checkingLink || (needsSetup && !onSetup)) {
+    return <GateHold />;
+  }
 
-// ============ INNER LAYOUT (always renders sidebar + header) ============
-function CustomerLayoutInner({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  if (!profile) {
+    return (
+      <GateHold>
+        <p className="text-sm text-gray-600 text-center">
+          Could not load your account.{' '}
+          <button type="button" className="underline" onClick={() => window.location.reload()}>
+            Try again
+          </button>
+        </p>
+      </GateHold>
+    );
+  }
+
+  if (needsSetup) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen bg-[var(--paper-muted)]" data-portal-shell>
-      <AuthRedirect />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="lg:ml-64 min-h-screen flex flex-col">
         <PortalHeader onMenuClick={() => setSidebarOpen(true)} />

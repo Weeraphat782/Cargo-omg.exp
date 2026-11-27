@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { customerWithoutCompanyResponse } from '@/lib/api-auth';
 import { BOOKING_WEIGHT_DOC_TYPES, emitQuotationDocsUploaded } from '@/lib/webhooks';
 
 export const dynamic = 'force-dynamic';
@@ -29,12 +30,17 @@ export async function POST(request: NextRequest) {
 
     const { data: quote, error } = await supabase
       .from('quotations')
-      .select('id')
+      .select('id, customer_user_id')
       .eq('id', quotationId)
       .maybeSingle();
 
     if (error || !quote) {
       return NextResponse.json({ error: 'Quotation not found.' }, { status: 404 });
+    }
+
+    if (quote.customer_user_id) {
+      const companyBlock = await customerWithoutCompanyResponse(supabase, quote.customer_user_id);
+      if (companyBlock) return companyBlock;
     }
 
     await emitQuotationDocsUploaded(supabase, quotationId, docTypesAdded);

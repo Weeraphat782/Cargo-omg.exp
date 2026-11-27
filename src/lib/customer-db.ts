@@ -697,6 +697,26 @@ export interface CustomerCompanyInput {
   contact_phone?: string;
 }
 
+/** True when this customer already has a companies row, even if profiles.company is blank. */
+export async function customerHasCompanyRecord(): Promise<boolean> {
+  try {
+    await loadSession();
+    const { data: { user } } = await queryClient.auth.getUser();
+    if (!user) return false;
+
+    const { data, error } = await queryClient
+      .from('companies')
+      .select('id')
+      .eq('customer_user_id', user.id)
+      .limit(1);
+
+    if (error) return false;
+    return (data?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function getCustomerCompany(): Promise<{ id: string; name: string; address?: string; tax_id?: string; contact_person?: string; contact_email?: string; contact_phone?: string } | null> {
   try {
     await loadSession();
@@ -723,6 +743,18 @@ export async function createCustomerCompany(
     await loadSession();
     const { data: { user } } = await queryClient.auth.getUser();
     if (!user) return { success: false, error: 'Not authenticated' };
+
+    const { data: existing } = await queryClient
+      .from('companies')
+      .select('id')
+      .eq('customer_user_id', user.id)
+      .limit(1);
+    if (existing?.[0]?.id) {
+      const updated = await updateCustomerCompany(existing[0].id, input);
+      return updated.success
+        ? { success: true, companyId: existing[0].id }
+        : { success: false, error: updated.error };
+    }
 
     const { data, error } = await queryClient
       .from('companies')

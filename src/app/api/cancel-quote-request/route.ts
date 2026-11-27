@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { customerWithoutCompanyResponse } from '@/lib/api-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,9 @@ export async function POST(request: NextRequest) {
     if (!quotationId || !userId) {
       return NextResponse.json({ error: 'Missing quotationId or userId.' }, { status: 400 })
     }
+
+    const companyBlock = await customerWithoutCompanyResponse(supabase, userId)
+    if (companyBlock) return companyBlock
 
     // Verify the quotation belongs to this user and is still pending_approval
     const { data: quotation, error: fetchError } = await supabase

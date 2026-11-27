@@ -14,6 +14,7 @@ import {
   runCustomerDocumentCheckPipeline,
   type DocumentCheckInput,
 } from '@/lib/run-customer-document-check';
+import { customerWithoutCompanyResponse } from '@/lib/api-auth';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,9 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
+
+    const companyBlock = await customerWithoutCompanyResponse(supabase, user.id);
+    if (companyBlock) return companyBlock;
 
     const { data: quotation } = await supabase
       .from('quotations')
