@@ -29,9 +29,6 @@ R2_ACCOUNT_ID=your-account-id
 R2_ACCESS_KEY_ID=your-access-key
 R2_SECRET_ACCESS_KEY=your-secret-key
 R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
-
-# Optional: OpenTyphoon AI API (สำหรับ AI document analysis)
-TYPHOON_API_KEY=your-typhoon-api-key-here
 ```
 
 ## วิธีการหาค่า Supabase Keys
