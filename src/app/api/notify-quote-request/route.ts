@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { customerWithoutCompanyResponse } from '@/lib/api-auth';
 import { sendQuoteRequestNotification } from '@/lib/mail';
 import { absoluteUrl } from '@/lib/site';
 import { emitQuotationCreated } from '@/lib/webhooks';
@@ -34,6 +35,11 @@ export async function POST(request: NextRequest) {
 
     if (quote.status !== 'pending_approval') {
       return NextResponse.json({ error: 'Not a pending quote request.' }, { status: 400 });
+    }
+
+    if (quote.customer_user_id) {
+      const companyBlock = await customerWithoutCompanyResponse(supabase, quote.customer_user_id);
+      if (companyBlock) return companyBlock;
     }
 
     const pallets = Array.isArray(quote.pallets) ? quote.pallets : [];

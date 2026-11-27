@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import { customerNeedsCompanySetup } from '@/lib/customer-company-gate';
 
 type AuthSuccess = {
   ok: true;
@@ -88,6 +89,48 @@ export async function requireApiUser(request: Request): Promise<ApiAuthResult> {
 }
 
 import { ROLES } from '@/lib/roles';
+
+/**
+ * 403 when this user is a customer with no company name and no companies row.
+ * Staff, admin, lab admin, and missing profiles are left to the caller.
+ */
+export async function customerWithoutCompanyResponse(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<NextResponse | null> {
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('role, company')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('customer company gate profile lookup failed:', error);
+    return NextResponse.json({ error: 'Could not verify company setup.' }, { status: 500 });
+  }
+
+  if (!customerNeedsCompanySetup({ role: profile?.role, companyName: profile?.company })) {
+    return null;
+  }
+
+  const { data: companies, error: companyError } = await supabase
+    .from('companies')
+    .select('id')
+    .eq('customer_user_id', userId)
+    .limit(1);
+
+  if (companyError) {
+    console.error('customer company gate company lookup failed:', companyError);
+    return NextResponse.json({ error: 'Could not verify company setup.' }, { status: 500 });
+  }
+
+  if (companies && companies.length > 0) return null;
+
+  return NextResponse.json(
+    { error: 'Complete company setup before using the portal.' },
+    { status: 403 },
+  );
+}
 
 export async function requireStaffApiUser(request: Request): Promise<ApiAuthResult> {
   const auth = await requireApiUser(request);

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireApiUser } from '@/lib/api-auth';
+import { customerWithoutCompanyResponse, requireApiUser } from '@/lib/api-auth';
 import { sendQcRequestToLineGroup } from '@/lib/line-admin-notify';
 import { getQcPayableTotal } from '@/lib/qc-invoice';
 import { absoluteUrl } from '@/lib/site';
@@ -14,6 +14,9 @@ export async function POST(request: Request) {
   if (auth.role !== ROLES.CUSTOMER) {
     return NextResponse.json({ error: 'Customer access required.' }, { status: 403 });
   }
+
+  const companyBlock = await customerWithoutCompanyResponse(auth.supabase, auth.user.id);
+  if (companyBlock) return companyBlock;
 
   const body = await request.json().catch(() => null);
   const requestId = typeof body?.requestId === 'string' ? body.requestId.trim() : '';
