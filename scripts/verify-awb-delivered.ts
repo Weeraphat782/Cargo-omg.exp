@@ -18,6 +18,7 @@ import {
   effectiveChargeableKg,
   formatDeliveredTimes,
   resolveDeliveredParties,
+  resolveImportPermitNo,
 } from '../src/lib/awb-tracking/delivered-email';
 
 process.env.NEXT_PUBLIC_SITE_URL = 'https://cargo.omgexp.com';
@@ -159,6 +160,122 @@ assert.match(logoEmail.html, /<img src="https:\/\/cargo\.omgexp\.com\/email-logo
 assert.match(logoEmail.html, /width="160"/);
 assert.ok(!logoEmail.html.includes('<h1 style="margin:0;font-size:18px;font-weight:600;">OMG Cargo</h1>'));
 assert.ok(logoEmail.text.trimEnd().endsWith('— OMG Cargo'));
+assert.match(logoEmail.text, /Import Permit No\.: -/);
+assert.match(logoEmail.html, /Import Permit No\.<\/td><td[^>]*><strong>-<\/strong>/);
+assert.match(noPartiesEmail.text, /Import Permit No\.: -/);
+
+assert.equal(
+  resolveImportPermitNo({
+    documents: [{ document_type: 'import-permit', original_file_name: 'OL-D-860/2026.pdf' }],
+  }),
+  'OL-D-860/2026'
+);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [{ document_type: 'import-permit', file_name: 'IMP/2000/2026.pdf' }],
+  }),
+  'IMP/2000/2026'
+);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [{ document_type: 'Import Permit', file_name: 'Import Permit - OL-D-860-2026.pdf' }],
+  }),
+  'OL-D-860-2026'
+);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [
+      { document_type: 'import-permit', original_file_name: 'Import Permit.pdf', notes: 'OL-D-860/2026' },
+    ],
+  }),
+  'OL-D-860/2026'
+);
+assert.equal(
+  resolveImportPermitNo({
+    bookingDetails: { import_permit_number: 'OL-D-860/2026' },
+    documents: [{ document_type: 'import-permit', file_name: 'IMP/2000/2026.pdf' }],
+  }),
+  'OL-D-860/2026'
+);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [
+      { document_type: 'import-permit', original_file_name: 'OL-D-111/2026.pdf', submitted_at: '2026-01-01' },
+      { document_type: 'import-permit', original_file_name: 'IMP/2000/2026.pdf', submitted_at: '2026-06-01' },
+    ],
+  }),
+  'IMP/2000/2026'
+);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [
+      {
+        document_type: 'import-permit',
+        original_file_name: 'OL-D-860/2026.pdf',
+        superseded_at: '2026-02-01',
+        submitted_at: '2026-06-01',
+      },
+    ],
+  }),
+  null
+);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [{ document_type: 'packing-list', file_name: 'OL-D-860/2026.pdf' }],
+  }),
+  null
+);
+assert.equal(resolveImportPermitNo({ documents: [] }), null);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [{ document_type: 'import-permit', file_name: 'Import Permit.pdf' }],
+  }),
+  null
+);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [
+      { document_type: 'import-permit', file_name: '3f1c2a0e-4b5d-4e6f-8a9b-0c1d2e3f4a5b.pdf' },
+    ],
+  }),
+  null
+);
+assert.equal(
+  resolveImportPermitNo({
+    documents: [{ document_type: 'import-permit', file_name: 'BtM-12345.pdf' }],
+  }),
+  'BtM-12345'
+);
+
+const permitEmail = buildDeliveredEmailContent({
+  quotation: makeQuotation({
+    quotation_no: 'OMG10024',
+    customer_name: 'Shipper Ltd',
+    consignee_name: 'Buyer AG',
+    import_permit_number: resolveImportPermitNo({
+      documents: [{ document_type: 'import-permit', original_file_name: 'OL-D-860/2026.pdf' }],
+    }),
+  }),
+  source_url: 'https://cargo.omgexp.com/track/sample',
+  delivered_at: '2026-09-30T14:20:00+02:00',
+});
+assert.equal(
+  permitEmail.subject,
+  'Delivered: OMG10024 / AWB 217-1064 8864 (Shipper Ltd -> Buyer AG)'
+);
+assert.match(permitEmail.text, /Flight: TG123[^\n]*\nImport Permit No\.: OL-D-860\/2026/);
+assert.match(
+  permitEmail.html,
+  /Import Permit No\.<\/td><td style="padding:8px 12px;font-size:14px;border-bottom:1px solid #e2e8f0;"><strong>OL-D-860\/2026<\/strong>/
+);
+
+const escapedPermit = buildDeliveredEmailContent({
+  quotation: makeQuotation({ import_permit_number: 'OL<D>-860/2026' }),
+  source_url: '',
+  delivered_at: '2026-09-30T14:20:00+02:00',
+});
+assert.match(escapedPermit.html, /OL&lt;D&gt;-860\/2026/);
+assert.ok(!escapedPermit.html.includes('OL<D>-860/2026'));
 
 const noFlight = buildDeliveredEmailContent({
   quotation: makeQuotation({ booking_air_freight: null }),
